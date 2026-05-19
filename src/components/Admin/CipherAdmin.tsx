@@ -128,11 +128,11 @@ export default function CipherAdmin() {
     
     const resetTimeout = () => {
       clearTimeout(timeout);
-      // Admin session expires after 5 minutes of inactivity
+      // Admin session expires after 24 hours of inactivity
       timeout = setTimeout(() => {
         toast.error("Admin Security Session Expired. Re-authentication Required.");
         logout().then(() => navigate('/welcome'));
-      }, 5 * 60 * 1000); 
+      }, 24 * 60 * 60 * 1000); 
     };
 
     window.addEventListener('mousemove', resetTimeout);
@@ -255,7 +255,7 @@ export default function CipherAdmin() {
       unsubscribeUIVersions();
       unsubscribeTransactions();
     };
-  }, []);
+  }, [user, profile]);
 
   const fetchDevices = async (userId: string) => {
     try {

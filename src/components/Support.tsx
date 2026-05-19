@@ -94,7 +94,7 @@ export default function Support() {
   const handleSendMessage = async () => {
     if (!chatInput.trim()) return;
 
-    const userMessage: ChatMessage = { role: 'user', text: chatInput, id: Date.now().toString() };
+    const userMessage: ChatMessage = { role: 'user', text: chatInput, id: `user-${Date.now()}-${Math.random().toString(36).substring(7)}` };
     setMessages(prev => [...prev, userMessage]);
     setChatInput('');
     setIsTyping(true);
@@ -111,7 +111,7 @@ export default function Support() {
       const botMessage: ChatMessage = { 
         role: 'bot', 
         text: data.text || "I apologize, I'm having trouble processing your request. Please try contacting our support team directly.", 
-        id: (Date.now() + 1).toString() 
+        id: `bot-${Date.now()}-${Math.random().toString(36).substring(7)}` 
       };
       setMessages(prev => [...prev, botMessage]);
     } catch (error) {
@@ -119,7 +119,7 @@ export default function Support() {
       const botMessage: ChatMessage = { 
         role: 'bot', 
         text: "I encountered an error. Please contact our support team via WhatsApp or Telegram.", 
-        id: (Date.now() + 1).toString() 
+        id: `bot-err-${Date.now()}-${Math.random().toString(36).substring(7)}` 
       };
       setMessages(prev => [...prev, botMessage]);
     } finally {

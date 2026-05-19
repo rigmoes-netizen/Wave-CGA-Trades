@@ -407,14 +407,27 @@ export default function Fund() {
 
     setIsSubmitting(true);
     try {
-      const amount = parseFloat(withdrawAmount);
-      const fee = (amount * withdrawalFeePercent) / 100;
-      const finalAmount = amount - fee;
+      const amountRaw = parseFloat(withdrawAmount);
+      // Force consistent precision for deduction calculations
+      const amount = Math.floor(amountRaw * 100) / 100;
+      const fee = Math.floor(((amount * withdrawalFeePercent) / 100) * 100) / 100;
+      const finalAmount = Math.floor((amount - fee) * 100) / 100;
+
+      const available_balance = profile.available_balance || 0;
+      if (amount > available_balance) {
+         toast.error("Insufficient balance for this settlement.");
+         return;
+      }
+
+      // Atomicity & Precision Fix: 
+      // If the user attempts to withdraw their full balance (within epsilon), zero it out exactly.
+      const isFullWithdrawal = Math.abs(available_balance - amount) < 0.0001;
+      const deductionAmount = isFullWithdrawal ? available_balance : amount;
 
       const newWithdrawal = {
         user_id: user.uid,
         user_name: profile.name,
-        amount,
+        amount: deductionAmount,
         fee,
         final_amount: finalAmount,
         method: withdrawMethod,
@@ -426,7 +439,7 @@ export default function Fund() {
       const newTransaction = {
         user_id: user.uid,
         type: 'withdrawal',
-        amount: -amount,
+        amount: -deductionAmount,
         fee,
         description: `Withdrawal request (${withdrawMethod.toUpperCase()})`,
         status: 'pending',
@@ -437,7 +450,7 @@ export default function Fund() {
         user_id: user.uid,
         type: 'info',
         title: 'Withdrawal Pending',
-        message: `Your withdrawal request for ${formatCurrency(amount)} has been logged and is undergoing review.`,
+        message: `Your withdrawal request for ${formatCurrency(deductionAmount)} has been logged and is undergoing review.`,
         read: false,
         created_at: new Date().toISOString(),
       };
@@ -462,7 +475,7 @@ export default function Fund() {
       const { increment } = await import('firebase/firestore');
       batch.update(userRef, { 
         withdraw_methods: updatedMethods,
-        available_balance: increment(-amount)
+        available_balance: increment(-deductionAmount)
       });
 
       // 2. Create withdrawal record

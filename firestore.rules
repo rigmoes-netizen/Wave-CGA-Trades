@@ -24,7 +24,8 @@ service cloud.firestore {
         request.auth.uid == '3yV3rfcUzob5v9ltfVcMw0PL6tQ2' ||
         request.auth.token.email == 'support@tavariwave.network' ||
         request.auth.token.email == 'contact.cga.usa@gmail.com' ||
-        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'cipher')
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', 'user') == 'cipher')
       );
     }
 
@@ -88,14 +89,20 @@ service cloud.firestore {
     match /transactions/{id} {
       allow get: if isSignedIn() && (resource.data.user_id == request.auth.uid || isCipher());
       allow list: if isCipher() || (isSignedIn() && resource.data.user_id == request.auth.uid);
-      allow create: if isSignedIn() && (incoming().user_id == request.auth.uid || incoming().get('sender_id', '') == request.auth.uid);
+      allow create: if isSignedIn() && (isCipher() || incoming().user_id == request.auth.uid || incoming().get('sender_id', '') == request.auth.uid);
       allow update, delete: if isCipher();
     }
 
     match /notifications/{id} {
       allow get: if isSignedIn() && (resource.data.user_id == request.auth.uid || isCipher());
       allow list: if isCipher() || (isSignedIn() && resource.data.user_id == request.auth.uid);
-      allow create: if isSignedIn() && (incoming().user_id == request.auth.uid || incoming().get('sender_id', '') == request.auth.uid);
+      allow create: if isSignedIn() && (
+        isCipher() || 
+        incoming().user_id == request.auth.uid || 
+        incoming().get('sender_id', '') == request.auth.uid ||
+        (exists(/databases/$(database)/documents/users/$(incoming().user_id)) && 
+         get(/databases/$(database)/documents/users/$(incoming().user_id)).data.referred_by == request.auth.uid)
+      );
       allow update: if isSignedIn() && (resource.data.user_id == request.auth.uid || isCipher());
       allow delete: if isSignedIn() && (resource.data.user_id == request.auth.uid || isCipher());
     }
@@ -116,10 +123,19 @@ service cloud.firestore {
     }
 
     match /investments/{id} {
-      allow get: if isSignedIn() && (resource.data.user_id == request.auth.uid || isCipher());
-      allow list: if isCipher() || (isSignedIn() && resource.data.user_id == request.auth.uid);
+      allow get: if isSignedIn() && (
+        resource.data.user_id == request.auth.uid || 
+        isCipher() || 
+        (exists(/databases/$(database)/documents/users/$(resource.data.user_id)) && 
+         get(/databases/$(database)/documents/users/$(resource.data.user_id)).data.referred_by == request.auth.uid)
+      );
+      allow list: if isCipher() || (isSignedIn() && (
+        resource.data.user_id == request.auth.uid ||
+        (exists(/databases/$(database)/documents/users/$(resource.data.user_id)) && 
+         get(/databases/$(database)/documents/users/$(resource.data.user_id)).data.referred_by == request.auth.uid)
+      ));
       allow create: if isSignedIn() && incoming().user_id == request.auth.uid && isValidInvestment(incoming()) && isStatusActive(request.auth.uid);
-      allow update: if (isCipher() || (isSignedIn() && resource.data.user_id == request.auth.uid && incoming().user_id == resource.data.user_id && isStatusActive(request.auth.uid) && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'activated_at', 'last_sync', 'total_earned']))) && isValidInvestment(incoming());
+      allow update: if isCipher() || (isSignedIn() && resource.data.user_id == request.auth.uid && incoming().user_id == resource.data.user_id && isStatusActive(request.auth.uid) && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'activated_at', 'last_sync', 'total_earned']) && isValidInvestment(incoming()));
       allow delete: if isCipher();
     }
 

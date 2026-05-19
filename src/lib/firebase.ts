@@ -1,6 +1,10 @@
-import { initializeApp } from 'firebase/app';
+import { initializeApp, getApp, getApps } from 'firebase/app';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
+import { 
+  initializeFirestore, 
+  persistentLocalCache, 
+  persistentMultipleTabManager 
+} from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 
 const firebaseConfig = {
@@ -14,8 +18,20 @@ const firebaseConfig = {
 
 const databaseId = import.meta.env.VITE_FIREBASE_DATABASE_ID || "ai-studio-d25a6b00-1ccc-4855-95cf-02a26b260224";
 
-const app = initializeApp(firebaseConfig);
+// Initialize Firebase
+const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+
+// Initialize Firestore with robust settings
+// Use experimentalAutoDetectLongPolling for best stability in varied network conditions (sandboxes/proxies)
+export const db = initializeFirestore(app, {
+  experimentalAutoDetectLongPolling: true,
+  localCache: persistentLocalCache({
+    tabManager: persistentMultipleTabManager(),
+  })
+}, databaseId);
+
 export const auth = getAuth(app);
-export const db = getFirestore(app, databaseId);
 export const storage = getStorage(app);
 export const googleProvider = new GoogleAuthProvider();
+
+export default app;

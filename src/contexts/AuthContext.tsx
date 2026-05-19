@@ -297,13 +297,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, [fetchProfileWithRetry]);
 
-  const logout = async () => {
+  const logout = useCallback(async () => {
     if (unsubscribeProfileRef.current) {
       unsubscribeProfileRef.current();
       unsubscribeProfileRef.current = null;
     }
     await auth.signOut();
-  };
+  }, []);
 
   return (
     <AuthContext.Provider value={{ user, profile, loading, logout, refreshAuth }}>
