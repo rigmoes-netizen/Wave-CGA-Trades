@@ -53,65 +53,19 @@ const BANK_DETAILS = {
   accountName: "TAVARI WAVE NETWORK"
 };
 
-const INVESTMENT_PLANS = [
-  {
-    id: 'regular',
-    name: 'Regular',
-    min: 10,
-    max: 40000,
-    roi: 0.025,
-    minWithdrawal: 3,
-    description: 'Stable entry-level investment plan.',
-    color: 'text-blue-400',
-    accentColor: '#3B82F6',
-    borderColor: 'border-blue-500/20',
-    bgColor: 'bg-[#0f172a]',
-    buttonColor: 'bg-blue-600 hover:bg-blue-500 active:bg-blue-700',
-    gradient: 'from-blue-500/20 to-indigo-500/10',
-    icon: <BarChart3 className="w-5 h-5 text-white" />,
-    duration: 1
-  },
-  {
-    id: 'premium',
-    name: 'Premium',
-    min: 50000,
-    max: 900000,
-    roi: 0.027,
-    minWithdrawal: 15000,
-    description: 'Advanced plan for high-volume investors.',
-    color: 'text-emerald-400',
-    accentColor: '#10B981',
-    borderColor: 'border-emerald-500/20',
-    bgColor: 'bg-[#064e3b]/20',
-    buttonColor: 'bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700',
-    gradient: 'from-emerald-500/20 to-teal-500/10',
-    icon: <Zap className="w-5 h-5 text-white" />,
-    duration: 3
-  },
-  {
-    id: 'elite',
-    name: 'Elite',
-    min: 1000000,
-    max: 10000000,
-    roi: 0.029,
-    minWithdrawal: 30000,
-    description: 'Institutional-grade investment plan.',
-    color: 'text-amber-400',
-    accentColor: '#F59E0B',
-    borderColor: 'border-amber-500/20',
-    bgColor: 'bg-[#4c1d95]/20',
-    buttonColor: 'bg-amber-500 hover:bg-amber-400 active:bg-amber-600',
-    gradient: 'from-amber-500/20 to-purple-500/20',
-    icon: <Coins className="w-5 h-5 text-white" />,
-    duration: 7
-  }
-];
+const PLAN_ICONS: Record<string, React.ReactNode> = {
+  regular: <BarChart3 className="w-5 h-5 text-white" />,
+  premium: <Zap className="w-5 h-5 text-white" />,
+  elite: <Coins className="w-5 h-5 text-white" />,
+};
+
+const getPlanIcon = (id: string) => PLAN_ICONS[id] || <Coins className="w-5 h-5 text-white" />;
 
 export default function Invest() {
-  const { user, profile } = useAuth();
+  const { user, profile, plans } = useAuth();
   const { setDistractionFree } = useUI();
   const navigate = useNavigate();
-  const [selectedPlan, setSelectedPlan] = useState<typeof INVESTMENT_PLANS[0] | null>(null);
+  const [selectedPlan, setSelectedPlan] = useState<any | null>(null);
   const [selectedWallet, setSelectedWallet] = useState<'funding_balance' | 'available_balance' | 'referral_earnings'>('funding_balance');
   const [view, setView] = useState<'plans' | 'summary' | 'payment'>('plans');
   const [amounts, setAmounts] = useState<Record<string, string>>({});
@@ -263,7 +217,7 @@ export default function Invest() {
     }
   };
 
-  const handleStartInvestment = (plan: typeof INVESTMENT_PLANS[0]) => {
+  const handleStartInvestment = (plan: any) => {
     const amountStr = amounts[plan.id] || '';
     const invAmount = parseFloat(amountStr);
     
@@ -333,7 +287,8 @@ export default function Invest() {
         // 4. ATOMIC BALANCE UPDATE
         if (paymentMethod === 'wallet') {
           transaction.update(userRef, {
-            [selectedWallet]: increment(-confirmedAmount)
+            [selectedWallet]: increment(-confirmedAmount),
+            total_invested: increment(confirmedAmount)
           });
         }
 
@@ -402,87 +357,121 @@ export default function Invest() {
             </header>
 
             <div className="flex overflow-x-auto lg:grid lg:grid-cols-3 gap-5 lg:gap-8 max-w-5xl mx-auto py-2 md:py-4 px-4 lg:px-0 scrollbar-hide snap-x snap-mandatory">
-              {INVESTMENT_PLANS.map((plan) => (
-                <div 
-                  key={plan.id}
-                  className={cn(
-                    "border rounded-[2rem] flex flex-col p-5 md:p-6 shadow-[0_10px_30px_rgba(0,0,0,0.5)] transition-all duration-500 relative overflow-hidden group min-h-[200px] lg:min-h-[440px] w-[85%] md:w-[280px] lg:w-full max-w-[300px] mx-auto flex-shrink-0 snap-center",
-                    plan.borderColor,
-                    plan.bgColor
-                  )}
-                >
-                  <div className={cn("absolute top-0 right-0 w-32 h-32 bg-gradient-to-br opacity-10 blur-xl -z-0", plan.gradient)} />
-                  
-                  <div className="relative z-10 flex-1 flex flex-col">
-                    <div className="flex items-center justify-between mb-0">
-                      <h3 className={cn("text-lg lg:text-2xl font-black italic font-serif", plan.color)}>{plan.name}</h3>
-                      <div className={cn("inline-flex items-center justify-center p-2 rounded-xl shadow-inner", plan.buttonColor)}>
-                        {plan.icon}
-                      </div>
-                    </div>
-                    
-                    <p className="text-aura-muted text-[8px] lg:text-[9px] font-medium lowercase tracking-wide leading-tight max-w-[180px] mb-3 lg:mb-4 opacity-70 mt-0.5">
-                      {plan.description}
-                    </p>
-  
-                    <div className="my-1 lg:my-3 border-t border-white/5 pt-3 lg:pt-4">
-                      <div className="flex items-center justify-between">
-                         <span className="text-[7px] lg:text-[9px] font-black text-aura-muted uppercase tracking-[0.2em] leading-none">Daily Yield</span>
-                         <span className={cn("text-xl lg:text-3xl font-black italic font-serif", plan.color)}>{(plan.roi * 100).toFixed(1)}%</span>
-                      </div>
-                    </div>
-  
-                    <div className="space-y-3 lg:space-y-4 mb-6">
-                      <div className="space-y-1.5">
-                        <span className="text-[7px] lg:text-[8px] font-bold text-aura-muted uppercase tracking-widest block ml-1 leading-none">Threshold</span>
-                        <div className={cn("flex items-center gap-2.5 p-2.5 lg:p-3 rounded-xl border bg-white/5", plan.borderColor)}>
-                           <CreditCard size={12} className={plan.color} />
-                           <span className="text-[9px] lg:text-[10px] font-bold text-white tracking-widest">{formatCurrency(plan.min)} - {formatCurrency(plan.max)}</span>
-                        </div>
-                      </div>
-  
-                      <div className="space-y-1.5">
-                        <span className="text-[7px] lg:text-[8px] font-bold text-aura-muted uppercase tracking-widest block ml-1 leading-none">Amount ($)</span>
-                        <div className="relative">
-                          <span className={cn(
-                            "absolute left-3 top-1/2 -translate-y-1/2 font-bold text-[10px] uppercase",
-                            amounts[plan.id] && (parseFloat(amounts[plan.id]) < plan.min || parseFloat(amounts[plan.id]) > plan.max) ? "text-red-500" : "text-white/40"
-                          )}>$</span>
-                          <input 
-                            type="number"
-                            inputMode="decimal"
-                            step="0.01"
-                            placeholder="0.00"
-                            value={amounts[plan.id] || ''}
-                            onChange={(e) => {
-                              const val = e.target.value.replace(/[^0-9.]/g, '');
-                              setAmounts({ [plan.id]: val }); 
-                            }}
-                            className={cn(
-                              "w-full bg-white/5 border rounded-xl py-2.5 lg:py-3.5 pl-7 pr-3 text-[10px] font-black transition-all outline-none",
-                              amounts[plan.id] && (parseFloat(amounts[plan.id]) < plan.min || parseFloat(amounts[plan.id]) > plan.max) 
-                                ? "border-red-500 text-red-500 focus:bg-red-500/10" 
-                                : "border-white/5 text-white focus:bg-white/10 focus:border-primary/50"
-                            )}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-  
-                  <button 
-                    disabled={!amounts[plan.id] || parseFloat(amounts[plan.id]) < plan.min || parseFloat(amounts[plan.id]) > plan.max}
-                    onClick={() => handleStartInvestment(plan)}
+              {plans.filter((p: any) => p.active_status !== false).map((plan: any) => {
+                const customCardStyle: React.CSSProperties = {};
+                if (plan.card_background) {
+                  customCardStyle.backgroundColor = plan.card_background;
+                }
+                if (plan.card_border) {
+                  customCardStyle.borderColor = plan.card_border;
+                }
+                if (plan.accent_color) {
+                  customCardStyle.boxShadow = `0 10px 40px -10px ${plan.accent_color}66`;
+                }
+
+                return (
+                  <div 
+                    key={plan.id}
                     className={cn(
-                      "w-full py-3.5 lg:py-4 rounded-xl text-white font-black text-[8px] lg:text-[9px] uppercase tracking-[0.2em] transition-all shadow-lg active:scale-[0.98]",
-                      plan.buttonColor,
-                      (!amounts[plan.id] || parseFloat(amounts[plan.id]) < plan.min || parseFloat(amounts[plan.id]) > plan.max) && "opacity-20 cursor-not-allowed grayscale"
+                      "border rounded-[2rem] flex flex-col p-5 md:p-6 shadow-[0_10px_30px_rgba(0,0,0,0.5)] transition-all duration-500 relative overflow-hidden group min-h-[200px] lg:min-h-[440px] w-[85%] md:w-[280px] lg:w-full max-w-[300px] mx-auto flex-shrink-0 snap-center",
+                      !plan.card_border && plan.borderColor,
+                      !plan.card_background && plan.bgColor
                     )}
+                    style={customCardStyle}
                   >
-                    Initialize Node
-                  </button>
-                </div>
-              ))}
+                    <div className={cn("absolute top-0 right-0 w-32 h-32 bg-gradient-to-br opacity-10 blur-xl -z-0", plan.gradient)} />
+                    
+                    <div className="relative z-10 flex-1 flex flex-col">
+                      <div className="flex items-center justify-between mb-0">
+                        <h3 
+                          className={cn("text-lg lg:text-2xl font-black italic font-serif", !plan.accent_color && plan.color)}
+                          style={plan.accent_color ? { color: plan.accent_color } : {}}
+                        >
+                          {plan.name}
+                        </h3>
+                        <div 
+                          className={cn("inline-flex items-center justify-center p-2 rounded-xl shadow-inner", !plan.accent_color && plan.buttonColor)}
+                          style={plan.accent_color ? { backgroundColor: `${plan.accent_color}22`, border: `1px solid ${plan.accent_color}33` } : {}}
+                        >
+                          {getPlanIcon(plan.id)}
+                        </div>
+                      </div>
+                      
+                      <p className="text-aura-muted text-[8px] lg:text-[9px] font-medium lowercase tracking-wide leading-tight max-w-[180px] mb-3 lg:mb-4 opacity-70 mt-0.5">
+                        {plan.description}
+                      </p>
+    
+                      <div className="my-1 lg:my-3 border-t border-white/5 pt-3 lg:pt-4">
+                        <div className="flex items-center justify-between">
+                           <span className="text-[7px] lg:text-[9px] font-black text-aura-muted uppercase tracking-[0.2em] leading-none">Daily Yield</span>
+                           <span 
+                             className={cn("text-xl lg:text-3xl font-black italic font-serif", !plan.accent_color && plan.color)}
+                             style={plan.accent_color ? { color: plan.accent_color } : {}}
+                           >
+                             {(plan.roi * 100).toFixed(1)}%
+                           </span>
+                        </div>
+                      </div>
+    
+                      <div className="space-y-3 lg:space-y-4 mb-6">
+                        <div className="space-y-1.5">
+                          <span className="text-[7px] lg:text-[8px] font-bold text-aura-muted uppercase tracking-widest block ml-1 leading-none">Threshold</span>
+                          <div 
+                            className={cn("flex items-center gap-2.5 p-2.5 lg:p-3 rounded-xl border bg-white/5", !plan.card_border && plan.borderColor)}
+                            style={plan.card_border ? { borderColor: `${plan.card_border}33` } : {}}
+                          >
+                             <CreditCard size={12} className={!plan.accent_color ? plan.color : undefined} style={plan.accent_color ? { color: plan.accent_color } : {}} />
+                             <span className="text-[9px] lg:text-[10px] font-bold text-white tracking-widest">
+                               {formatCurrency(plan.min)} - {formatCurrency(plan.max)}
+                             </span>
+                          </div>
+                        </div>
+    
+                        <div className="space-y-1.5">
+                          <span className="text-[7px] lg:text-[8px] font-bold text-aura-muted uppercase tracking-widest block ml-1 leading-none">Amount ($)</span>
+                          <div className="relative">
+                            <span className={cn(
+                              "absolute left-3 top-1/2 -translate-y-1/2 font-bold text-[10px] uppercase",
+                              amounts[plan.id] && (parseFloat(amounts[plan.id]) < plan.min || parseFloat(amounts[plan.id]) > plan.max) ? "text-red-500" : "text-white/40"
+                            )}>$</span>
+                            <input 
+                              type="number"
+                              inputMode="decimal"
+                              step="0.01"
+                              placeholder="0.00"
+                              value={amounts[plan.id] || ''}
+                              onChange={(e) => {
+                                const val = e.target.value.replace(/[^0-9.]/g, '');
+                                setAmounts({ [plan.id]: val }); 
+                              }}
+                              className={cn(
+                                "w-full bg-white/5 border rounded-xl py-2.5 lg:py-3.5 pl-7 pr-3 text-[10px] font-black transition-all outline-none",
+                                amounts[plan.id] && (parseFloat(amounts[plan.id]) < plan.min || parseFloat(amounts[plan.id]) > plan.max) 
+                                  ? "border-red-500 text-red-500 focus:bg-red-500/10" 
+                                  : "border-white/5 text-white focus:bg-white/10"
+                              )}
+                              style={(!amounts[plan.id] || parseFloat(amounts[plan.id]) >= plan.min && parseFloat(amounts[plan.id]) <= plan.max) && plan.card_border ? { borderColor: `${plan.card_border}40` } : {}}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+    
+                    <button 
+                      disabled={!amounts[plan.id] || parseFloat(amounts[plan.id]) < plan.min || parseFloat(amounts[plan.id]) > plan.max}
+                      onClick={() => handleStartInvestment(plan)}
+                      className={cn(
+                        "w-full py-3.5 lg:py-4 rounded-xl text-white font-black text-[8px] lg:text-[9px] uppercase tracking-[0.2em] transition-all shadow-lg active:scale-[0.98]",
+                        !plan.accent_color && plan.buttonColor,
+                        (!amounts[plan.id] || parseFloat(amounts[plan.id]) < plan.min || parseFloat(amounts[plan.id]) > plan.max) && "opacity-20 cursor-not-allowed grayscale"
+                      )}
+                      style={(!amounts[plan.id] || parseFloat(amounts[plan.id]) >= plan.min && parseFloat(amounts[plan.id]) <= plan.max) && plan.accent_color ? { backgroundColor: plan.accent_color, shadowColor: plan.accent_color } : {}}
+                    >
+                      Initialize Node
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           </motion.div>
         )}
@@ -622,7 +611,7 @@ export default function Invest() {
                                     const cleanBalance = parseFloat(balance.toFixed(2));
                                     
                                     // Validation and Plan Switch Logic
-                                    const appropriatePlan = INVESTMENT_PLANS.find(p => cleanBalance >= p.min && cleanBalance <= p.max);
+                                    const appropriatePlan = (plans || []).filter((p: any) => p.active_status !== false).find((p: any) => cleanBalance >= p.min && cleanBalance <= p.max);
                                     
                                     if (appropriatePlan) {
                                       if (appropriatePlan.id !== selectedPlan?.id) {
@@ -633,10 +622,13 @@ export default function Invest() {
                                     } else {
                                       // Fallback: update amount anyway but check if it's too high for all or too low for all
                                       setConfirmedAmount(cleanBalance);
-                                      if (cleanBalance < INVESTMENT_PLANS[0].min) {
-                                        toast.error(`Minimum investment is ${formatCurrency(INVESTMENT_PLANS[0].min)}`);
-                                      } else if (cleanBalance > INVESTMENT_PLANS[INVESTMENT_PLANS.length - 1].max) {
-                                        toast.error(`Maximum investment is ${formatCurrency(INVESTMENT_PLANS[INVESTMENT_PLANS.length - 1].max)}`);
+                                      const activePlans = (plans || []).filter((p: any) => p.active_status !== false);
+                                      if (activePlans.length > 0) {
+                                        if (cleanBalance < activePlans[0].min) {
+                                          toast.error(`Minimum investment is ${formatCurrency(activePlans[0].min)}`);
+                                        } else if (cleanBalance > activePlans[activePlans.length - 1].max) {
+                                          toast.error(`Maximum investment is ${formatCurrency(activePlans[activePlans.length - 1].max)}`);
+                                        }
                                       }
                                     }
                                   }}
@@ -656,7 +648,7 @@ export default function Invest() {
                                     Allocation outside {selectedPlan.name} limits ({formatCurrency(selectedPlan.min)} - {formatCurrency(selectedPlan.max)})
                                   </p>
                                   <div className="mt-3 grid grid-cols-1 gap-2">
-                                    {INVESTMENT_PLANS.map(p => (
+                                    {(plans || []).filter((p: any) => p.active_status !== false).map((p: any) => (
                                       confirmedAmount >= p.min && confirmedAmount <= p.max && (
                                         <button 
                                           key={p.id}

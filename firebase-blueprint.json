@@ -112,6 +112,33 @@
       },
       "required": ["userId", "email", "message", "status", "created_at"]
     },
+    "InvestmentPlan": {
+      "title": "Investment Plan",
+      "description": "Dynamic ROI investment plan cards and settings managed by Cipher.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "min": { "type": "number" },
+        "max": { "type": "number" },
+        "roi": { "type": "number" },
+        "minWithdrawal": { "type": "number" },
+        "description": { "type": "string" },
+        "color": { "type": "string" },
+        "accentColor": { "type": "string" },
+        "borderColor": { "type": "string" },
+        "bgColor": { "type": "string" },
+        "buttonColor": { "type": "string" },
+        "gradient": { "type": "string" },
+        "duration": { "type": "number" },
+        "active_status": { "type": "boolean" },
+        "card_background": { "type": "string" },
+        "card_border": { "type": "string" },
+        "accent_color": { "type": "string" },
+        "updated_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "min", "max", "roi", "active_status"]
+    },
     "SystemSettings": {
       "title": "System Settings",
       "description": "Global system configuration.",
@@ -151,6 +178,10 @@
     "/settings/system": {
       "schema": "SystemSettings",
       "description": "Global system settings."
+    },
+    "/investment_plans/{id}": {
+      "schema": "InvestmentPlan",
+      "description": "Dynamic ROI investment plan configurations."
     }
   }
 }

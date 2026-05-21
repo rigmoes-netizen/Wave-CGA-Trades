@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Users, 
@@ -37,7 +37,8 @@ import {
   IdCard,
   UserCircle,
   ArrowLeft,
-  Copy
+  Copy,
+  X
 } from 'lucide-react';
 import { cn, formatCurrency } from '../../lib/utils';
 import { toast } from 'sonner';
@@ -64,41 +65,65 @@ import { logAudit } from '../../lib/auth_security';
 
 // --- COMPONENTS ---
 
-function SidebarItem({ icon, label, active, onClick }: { icon: React.ReactNode, label: string, active: boolean, onClick: () => void }) {
+function SidebarItem({ icon, label, active, onClick, badge }: { icon: React.ReactNode, label: string, active: boolean, onClick: () => void, badge?: number }) {
   return (
     <button 
       onClick={onClick}
       className={cn(
-        "flex items-center gap-3 w-full p-4 rounded-xl transition-all duration-300",
+        "flex items-center justify-between w-full p-4 rounded-xl transition-all duration-300",
         active 
           ? "bg-aura-lime text-aura-black brutalist-shadow font-black" 
           : "text-aura-muted hover:text-white hover:bg-white/5 font-bold"
       )}
     >
-      {icon}
-      <span className="text-[10px] uppercase tracking-widest">{label}</span>
+      <div className="flex items-center gap-3">
+        {icon}
+        <span className="text-[10px] uppercase tracking-widest">{label}</span>
+      </div>
+      {badge && badge > 0 ? (
+        <span className={cn(
+          "w-5 h-5 flex items-center justify-center text-[9px] font-black rounded-full shadow-inner",
+          active ? "bg-black text-aura-lime font-black" : "bg-red-500 text-white animate-pulse"
+        )}>
+          {badge}
+        </span>
+      ) : null}
     </button>
   );
 }
 
-function StatCard({ label, value, icon: Icon, color }: { label: string, value: string, icon: any, color: string }) {
+function StatCard({ label, value, icon: Icon, color, onClick }: { label: string, value: string, icon: any, color: string, onClick?: () => void }) {
   return (
-    <div className="p-6 bg-white/5 border border-white/5 rounded-3xl">
-      <div className="flex justify-between items-start mb-4">
-        <Icon size={18} className={color} />
-        <p className="text-[8px] font-black uppercase tracking-widest text-aura-muted">Live Sync</p>
+    <div 
+      onClick={onClick}
+      className={cn(
+        "p-5 sm:p-6 bg-white/[0.02] border border-white/5 rounded-[24px] hover:border-white/10 transition-all flex flex-col justify-between min-w-0 w-full",
+        onClick ? "cursor-pointer hover:bg-white/[0.04] hover:scale-[1.01]" : ""
+      )}
+    >
+      <div>
+        <div className="flex justify-between items-center mb-4">
+          <Icon size={20} className={color} />
+          <p className="text-[8px] font-black uppercase tracking-widest text-aura-muted bg-white/5 px-2 py-1 rounded-md">Live Sync</p>
+        </div>
+        <p className="text-lg sm:text-xl lg:text-2xl font-black font-serif italic tracking-tight text-white truncate" title={value}>
+          {value}
+        </p>
       </div>
-      <p className="text-2xl font-black font-serif italic tracking-tighter mb-1 text-white">{value}</p>
-      <p className="text-[10px] font-bold text-aura-muted uppercase tracking-widest">{label}</p>
+      <p className="text-[9px] sm:text-[10px] font-bold text-aura-muted uppercase tracking-wider mt-2 truncate">{label}</p>
     </div>
   );
 }
 
 export default function CipherAdmin() {
-  const { user, profile, logout } = useAuth();
+  const { user, profile, logout, plans } = useAuth();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'canalytics' | 'cdeposits' | 'cwithdrawals' | 'cinvestments' | 'cuser' | 'csettings' | 'csecurity' | 'cplans' | 'ckycs' | 'cnotifications' | 'cui_editor'>('canalytics');
   const [investFilter, setInvestFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
+  const [depositFilter, setDepositFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
+  const [withdrawalFilter, setWithdrawalFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
+  const [selectedTicket, setSelectedTicket] = useState<any>(null);
+  const [ticketType, setTicketType] = useState<'deposit' | 'withdrawal' | 'investment' | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedUser, setSelectedUser] = useState<any>(null);
   const [userDevices, setUserDevices] = useState<any[]>([]);
@@ -111,16 +136,6 @@ export default function CipherAdmin() {
   const [uiVersions, setUiVersions] = useState<any[]>([]);
   const [uiConfig, setUiConfig] = useState<any>({});
   const [selectedVersion, setSelectedVersion] = useState<any>(null);
-
-  const [stats, setStats] = useState({
-    totalUsers: 0,
-    totalDeposits: 0,
-    totalWithdrawals: 0,
-    totalInvested: 0,
-    activeNodes: 0,
-    available_balance: 0,
-    securityAlerts: 0
-  });
 
   // Admin Security Logic
   useEffect(() => {
@@ -154,6 +169,163 @@ export default function CipherAdmin() {
   const [transactions, setTransactions] = useState<any[]>([]);
   const [exchangeRate, setExchangeRate] = useState<number>(1400);
 
+  // Broadcaster and monitor session states
+  const [seenDepositIds, setSeenDepositIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('seen_deposit_ids');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [seenWithdrawalIds, setSeenWithdrawalIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('seen_withdrawal_ids');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [seenInvestmentIds, setSeenInvestmentIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('seen_investment_ids');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [investmentPreviewType, setInvestmentPreviewType] = useState<'active' | 'inactive' | null>(null);
+
+  // Broadcast Notification Form and Targeting Panel States
+  const [notifTitle, setNotifTitle] = useState('');
+  const [notifMessage, setNotifMessage] = useState('');
+  const [notifTarget, setNotifTarget] = useState<'all' | 'selected' | 'inactive' | 'inactive_investors'>('all');
+  const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
+  const [notifSearchTerm, setNotifSearchTerm] = useState('');
+  const [notifUserFilter, setNotifUserFilter] = useState<'all' | 'inactive' | 'inactive_investors'>('all');
+  const [isSendingNotif, setIsSendingNotif] = useState(false);
+
+  const pendingDepositsUnseenCount = useMemo(() => {
+    return deposits.filter((dep: any) => dep.status === 'pending' && !seenDepositIds.includes(dep.id)).length;
+  }, [deposits, seenDepositIds]);
+
+  const pendingWithdrawalsUnseenCount = useMemo(() => {
+    return withdrawals.filter((wit: any) => wit.status === 'pending' && !seenWithdrawalIds.includes(wit.id)).length;
+  }, [withdrawals, seenWithdrawalIds]);
+
+  const pendingInvestmentsUnseenCount = useMemo(() => {
+    return investments.filter((inv: any) => inv.status === 'pending' && !seenInvestmentIds.includes(inv.id)).length;
+  }, [investments, seenInvestmentIds]);
+
+  useEffect(() => {
+    if (activeTab === 'cdeposits') {
+      const pendingIds = deposits.filter((dep: any) => dep.status === 'pending').map((dep: any) => dep.id);
+      if (pendingIds.some(id => !seenDepositIds.includes(id))) {
+        const updated = Array.from(new Set([...seenDepositIds, ...pendingIds]));
+        setSeenDepositIds(updated);
+        localStorage.setItem('seen_deposit_ids', JSON.stringify(updated));
+      }
+    }
+  }, [activeTab, deposits, seenDepositIds]);
+
+  useEffect(() => {
+    if (activeTab === 'cwithdrawals') {
+      const pendingIds = withdrawals.filter((wit: any) => wit.status === 'pending').map((wit: any) => wit.id);
+      if (pendingIds.some(id => !seenWithdrawalIds.includes(id))) {
+        const updated = Array.from(new Set([...seenWithdrawalIds, ...pendingIds]));
+        setSeenWithdrawalIds(updated);
+        localStorage.setItem('seen_withdrawal_ids', JSON.stringify(updated));
+      }
+    }
+  }, [activeTab, withdrawals, seenWithdrawalIds]);
+
+  useEffect(() => {
+    if (activeTab === 'cinvestments') {
+      const pendingIds = investments.filter((inv: any) => inv.status === 'pending').map((inv: any) => inv.id);
+      if (pendingIds.some(id => !seenInvestmentIds.includes(id))) {
+        const updated = Array.from(new Set([...seenInvestmentIds, ...pendingIds]));
+        setSeenInvestmentIds(updated);
+        localStorage.setItem('seen_investment_ids', JSON.stringify(updated));
+      }
+    }
+  }, [activeTab, investments, seenInvestmentIds]);
+
+  const getUserDetails = (userId: string, defaultName?: string) => {
+    const matchedUser = users.find(u => u?.id === userId);
+    return {
+      id: userId || 'N/A',
+      name: matchedUser?.name || defaultName || 'Anonymous',
+      email: matchedUser?.email || 'N/A',
+    };
+  };
+
+  const stats = useMemo(() => {
+    const totalUsers = users.length;
+    
+    // Total Deposit represents only unused deposited funds (funding_balance) across all users
+    const totalDeposits = users.reduce((acc, curr) => acc + (curr.funding_balance || 0), 0);
+      
+    // Approved withdrawals sum
+    const totalWithdrawals = withdrawals
+      .filter((w: any) => w.status === 'approved')
+      .reduce((acc, curr) => acc + (curr.amount || 0), 0);
+    
+    // Total Active Investments count and sum
+    const activeInvestmentsList = investments.filter((i: any) => i.status === 'active');
+    const activeNodes = activeInvestmentsList.length;
+    const totalInvested = activeInvestmentsList.reduce((acc, curr) => acc + (curr.amount || 0), 0);
+
+    // Create a new metric mapping real-time spendable Available Balance across all users
+    const totalAvailableBalance = users.reduce((acc, curr) => acc + (curr.available_balance || 0), 0);
+
+    // Total Inactive Investments count
+    const inactiveInvestmentsList = investments.filter((i: any) => i.status === 'inactive' || i.status === 'stopped' || i.status === 'completed' || i.status === 'rejected');
+    const inactiveNodes = inactiveInvestmentsList.length;
+
+    // Total Live ROI Generated
+    const totalLiveRoiGenerated = investments
+      .filter((i: any) => i.status === 'active' || i.status === 'completed')
+      .reduce((acc, curr) => acc + (curr.total_earned || 0), 0);
+
+    // Total Active Investors: Distinct users with active investments
+    const activeInvestorsWithNode = new Set(activeInvestmentsList.map((i: any) => i.user_id));
+    const totalActiveInvestors = activeInvestorsWithNode.size;
+
+    // Total Assets (sum of all users' active assets globally: Deposit + Spendable/Available + Investment + Referral)
+    const totalReferralEarnings = users.reduce((acc, curr) => acc + (curr.referral_earnings || 0), 0);
+    const totalAssets = totalDeposits + totalAvailableBalance + totalInvested + totalReferralEarnings;
+
+    // Security alerts count
+    const securityAlerts = securityLogs.filter((l: any) => 
+      l.action?.includes('mfa_failed') || l.action?.includes('denied')
+    ).length;
+
+    // Active nodes count grouped by plans: Regular, Premium, Elite
+    const activeRegularCount = activeInvestmentsList.filter((i: any) => i.plan_name?.toLowerCase() === 'regular').length;
+    const activePremiumCount = activeInvestmentsList.filter((i: any) => i.plan_name?.toLowerCase() === 'premium').length;
+    const activeEliteCount = activeInvestmentsList.filter((i: any) => i.plan_name?.toLowerCase() === 'elite').length;
+
+    return {
+      totalUsers,
+      totalDeposits,
+      totalWithdrawals,
+      totalInvested,
+      totalAvailableBalance,
+      activeNodes,
+      inactiveNodes,
+      totalAssets,
+      totalLiveRoiGenerated,
+      totalActiveInvestors,
+      securityAlerts,
+      activeRegularCount,
+      activePremiumCount,
+      activeEliteCount
+    };
+  }, [users, deposits, withdrawals, investments, securityLogs]);
+
   useEffect(() => {
     const CIPHER_UID = '3yV3rfcUzob5v9ltfVcMw0PL6tQ2';
     const CIPHER_EMAIL = 'support@tavariwave.network';
@@ -183,8 +355,6 @@ export default function CipherAdmin() {
       (snap) => {
         const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         setUsers(list);
-        const totalAvail = list.reduce((acc: number, curr: any) => acc + (curr.available_balance || 0), 0);
-        setStats(prev => ({ ...prev, totalUsers: list.length, available_balance: totalAvail }));
       },
       (err) => console.error("Users list sync failed:", err.message)
     );
@@ -193,8 +363,6 @@ export default function CipherAdmin() {
       (snap) => {
         const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         setDeposits(list);
-        const totalDep = list.filter((d: any) => d.status === 'approved').reduce((acc, curr: any) => acc + curr.amount, 0);
-        setStats(prev => ({ ...prev, totalDeposits: totalDep }));
       },
       (err) => console.error("Deposits sync failed:", err.message)
     );
@@ -203,8 +371,6 @@ export default function CipherAdmin() {
       (snap) => {
         const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         setWithdrawals(list);
-        const totalWith = list.filter((d: any) => d.status === 'approved').reduce((acc, curr: any) => acc + curr.amount, 0);
-        setStats(prev => ({ ...prev, totalWithdrawals: totalWith }));
       },
       (err) => console.error("Withdrawals sync failed:", err.message)
     );
@@ -213,9 +379,6 @@ export default function CipherAdmin() {
       (snap) => {
         const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         setInvestments(list);
-        const totalInv = list.filter((d: any) => d.status === 'active' || d.status === 'inactive').reduce((acc, curr: any) => acc + curr.amount, 0);
-        const activeNodes = list.filter((d: any) => d.status === 'active').length;
-        setStats(prev => ({ ...prev, totalInvested: totalInv, activeNodes }));
       },
       (err) => console.error("Investments sync failed:", err.message)
     );
@@ -224,8 +387,6 @@ export default function CipherAdmin() {
       (snap) => {
         const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         setSecurityLogs(list);
-        const alerts = list.filter((l: any) => l.action?.includes('mfa_failed') || l.action?.includes('denied')).length;
-        setStats(prev => ({ ...prev, securityAlerts: alerts }));
       },
       (err) => console.error("Audit logs sync failed:", err.message)
     );
@@ -278,6 +439,96 @@ export default function CipherAdmin() {
     setTimeout(() => setLoading(false), 500);
   };
 
+  const sendNotifications = async () => {
+    if (!notifTitle.trim()) {
+      toast.error("Please enter a message title");
+      return;
+    }
+    if (!notifMessage.trim()) {
+      toast.error("Please enter a message body");
+      return;
+    }
+
+    try {
+      setIsSendingNotif(true);
+
+      // Determine target users
+      let targetUsers: any[] = [];
+      if (notifTarget === 'all') {
+        targetUsers = users;
+      } else if (notifTarget === 'inactive') {
+        targetUsers = users.filter(u => {
+          const hasActiveNodes = investments.some(i => i.user_id === u.id && i.status === 'active');
+          return !hasActiveNodes;
+        });
+      } else if (notifTarget === 'inactive_investors') {
+        targetUsers = users.filter(u => {
+          const hasActiveNodes = investments.some(i => i.user_id === u.id && i.status === 'active');
+          const hasAnyNodes = investments.some(i => i.user_id === u.id);
+          return !hasActiveNodes && hasAnyNodes;
+        });
+      } else if (notifTarget === 'selected') {
+        targetUsers = users.filter(u => selectedUserIds.includes(u.id));
+        if (targetUsers.length === 0) {
+          toast.error("Please select at least one user first");
+          setIsSendingNotif(false);
+          return;
+        }
+      }
+
+      if (targetUsers.length === 0) {
+        toast.error("No users match the selected targeting criteria");
+        setIsSendingNotif(false);
+        return;
+      }
+
+      // Write notifications to Firebase
+      const { doc, collection, writeBatch } = await import('firebase/firestore');
+      
+      const batchLimit = 400;
+      let batch = writeBatch(db);
+      let opCount = 0;
+
+      for (let i = 0; i < targetUsers.length; i++) {
+        const u = targetUsers[i];
+        if (!u.id) continue;
+        
+        const notifRef = doc(collection(db, 'notifications'));
+        const newNotification = {
+          user_id: u.id,
+          type: 'info',
+          title: notifTitle,
+          message: notifMessage,
+          read: false,
+          created_at: new Date().toISOString()
+        };
+        
+        batch.set(notifRef, newNotification);
+        opCount++;
+
+        if (opCount >= batchLimit) {
+          await batch.commit();
+          batch = writeBatch(db);
+          opCount = 0;
+        }
+      }
+
+      if (opCount > 0) {
+        await batch.commit();
+      }
+
+      toast.success(`Success! Broadcasted notification to ${targetUsers.length} users.`);
+      setNotifTitle('');
+      setNotifMessage('');
+      setSelectedUserIds([]);
+    } catch (e: any) {
+      console.error("NOTIFICATION BROADCAST ERROR:", e);
+      toast.error(`Broadcast failed: ${e?.message || 'Operation Denied'}`);
+    } finally {
+      setIsSendingNotif(false);
+    }
+  };
+
   const approveDeposit = async (deposit: any) => {
     try {
       await runTransaction(db, async (transaction) => {
@@ -293,8 +544,10 @@ export default function CipherAdmin() {
         const userDoc = await transaction.get(userRef);
         if (!userDoc.exists()) throw new Error("User missing");
 
+        const depositAmountValue = parseFloat(depositData.amount || deposit.amount || 0);
+
         transaction.update(userRef, { 
-          funding_balance: increment(deposit.amount)
+          funding_balance: increment(depositAmountValue)
         });
 
         transaction.update(depositRef, { 
@@ -465,9 +718,9 @@ export default function CipherAdmin() {
 
         <nav className="flex-1 space-y-2">
           <SidebarItem icon={<BarChart3 size={18} />} label="Analytics" active={activeTab === 'canalytics'} onClick={() => handleTabChange('canalytics')} />
-          <SidebarItem icon={<CreditCard size={18} />} label="Deposits" active={activeTab === 'cdeposits'} onClick={() => handleTabChange('cdeposits')} />
-          <SidebarItem icon={<ArrowDownLeft size={18} />} label="Withdrawals" active={activeTab === 'cwithdrawals'} onClick={() => handleTabChange('cwithdrawals')} />
-          <SidebarItem icon={<Zap size={18} />} label="Investments" active={activeTab === 'cinvestments'} onClick={() => handleTabChange('cinvestments')} />
+          <SidebarItem icon={<CreditCard size={18} />} label="Deposits" active={activeTab === 'cdeposits'} onClick={() => handleTabChange('cdeposits')} badge={pendingDepositsUnseenCount} />
+          <SidebarItem icon={<ArrowDownLeft size={18} />} label="Withdrawals" active={activeTab === 'cwithdrawals'} onClick={() => handleTabChange('cwithdrawals')} badge={pendingWithdrawalsUnseenCount} />
+          <SidebarItem icon={<Zap size={18} />} label="Investments" active={activeTab === 'cinvestments'} onClick={() => handleTabChange('cinvestments')} badge={pendingInvestmentsUnseenCount} />
           <SidebarItem icon={<Users size={18} />} label="Users" active={activeTab === 'cuser'} onClick={() => handleTabChange('cuser')} />
           <SidebarItem icon={<UserMinus size={18} />} label="Inactive" active={activeTab === 'cinactiveusers'} onClick={() => handleTabChange('cinactiveusers')} />
           <SidebarItem icon={<IdCard size={18} />} label="KYC Control" active={activeTab === 'ckycs'} onClick={() => handleTabChange('ckycs')} />
@@ -508,13 +761,18 @@ export default function CipherAdmin() {
 
         {activeTab === 'canalytics' && (
           <div className="space-y-12">
-            <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-4 lg:gap-6">
+            <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6">
               <StatCard label="Total Users" value={stats.totalUsers.toString()} icon={Users} color="text-blue-400" />
-              <StatCard label="Deposits Approved" value={formatCurrency(stats.totalDeposits)} icon={CreditCard} color="text-green-400" />
-              <StatCard label="Payouts Settled" value={formatCurrency(stats.totalWithdrawals)} icon={ArrowDownLeft} color="text-red-400" />
-              <StatCard label="Strategic Nodes" value={stats.activeNodes.toString()} icon={Zap} color="text-aura-lime" />
-              <StatCard label="Vault Access" value={stats.securityAlerts.toString()} icon={AlertTriangle} color={stats.securityAlerts > 0 ? "text-red-500" : "text-emerald-500"} />
-              <StatCard label="Network Liquid" value={formatCurrency(stats.available_balance)} icon={Wallet} color="text-purple-400" />
+              <StatCard label="Active Investors" value={stats.totalActiveInvestors.toString()} icon={Users} color="text-cyan-400" />
+              <StatCard label="Total Assets" value={formatCurrency(stats.totalAssets)} icon={Building2} color="text-teal-400" />
+              <StatCard label="Total Deposits" value={formatCurrency(stats.totalDeposits)} icon={CreditCard} color="text-green-400" />
+              <StatCard label="Total Withdrawals" value={formatCurrency(stats.totalWithdrawals)} icon={ArrowDownLeft} color="text-red-400" />
+              <StatCard label="Available Balance" value={formatCurrency(stats.totalAvailableBalance)} icon={Coins} color="text-indigo-400" />
+              <StatCard label="Investment Balance" value={formatCurrency(stats.totalInvested)} icon={Coins} color="text-purple-400" />
+              <StatCard label="Active Investments" value={stats.activeNodes.toString()} icon={Zap} color="text-aura-lime" onClick={() => setInvestmentPreviewType('active')} />
+              <StatCard label="Inactive Investments" value={stats.inactiveNodes.toString()} icon={Zap} color="text-gray-500" onClick={() => setInvestmentPreviewType('inactive')} />
+              <StatCard label="ROI Generated" value={formatCurrency(stats.totalLiveRoiGenerated)} icon={TrendingUp} color="text-amber-400" />
+              <StatCard label="Vault Security Alerts" value={stats.securityAlerts.toString()} icon={AlertTriangle} color={stats.securityAlerts > 0 ? "text-red-500" : "text-emerald-500"} />
             </div>
 
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-12">
@@ -623,6 +881,30 @@ export default function CipherAdmin() {
 
                {/* RECENT NODE INVESTMENTS */}
                <div className="space-y-6">
+                  {/* INVESTMENT PLAN ACTIVITY TRACKING */}
+                  <div className="p-6 bg-white/[0.02] border border-white/5 rounded-3xl space-y-4">
+                     <div className="flex items-center justify-between pb-2 border-b border-white/5">
+                        <h3 className="text-xs font-black uppercase tracking-[0.15em] text-white flex items-center gap-2">
+                           <Activity size={16} className="text-aura-lime" /> Plan Activity Allocation
+                        </h3>
+                        <span className="text-[8px] font-bold text-aura-muted uppercase tracking-widest">Real-time</span>
+                     </div>
+                     <div className="space-y-3">
+                        <div className="flex justify-between items-center p-3 bg-white/[0.01] border border-white/[0.03] rounded-2xl hover:bg-white/5 transition-all">
+                           <span className="text-xs font-bold text-white uppercase tracking-wider">Regular Plan</span>
+                           <span className="text-[11px] font-mono font-black text-aura-lime bg-aura-lime/5 px-2.5 py-1 rounded-lg border border-aura-lime/10">{stats.activeRegularCount} Active</span>
+                        </div>
+                        <div className="flex justify-between items-center p-3 bg-white/[0.01] border border-white/[0.03] rounded-2xl hover:bg-white/5 transition-all">
+                           <span className="text-xs font-bold text-white uppercase tracking-wider">Premium Plan</span>
+                           <span className="text-[11px] font-mono font-black text-aura-lime bg-aura-lime/5 px-2.5 py-1 rounded-lg border border-aura-lime/10">{stats.activePremiumCount} Active</span>
+                        </div>
+                        <div className="flex justify-between items-center p-3 bg-white/[0.01] border border-white/[0.03] rounded-2xl hover:bg-white/5 transition-all">
+                           <span className="text-xs font-bold text-white uppercase tracking-wider">Elite Plan</span>
+                           <span className="text-[11px] font-mono font-black text-aura-lime bg-aura-lime/5 px-2.5 py-1 rounded-lg border border-aura-lime/10">{stats.activeEliteCount} Active</span>
+                        </div>
+                     </div>
+                  </div>
+
                   <div className="flex items-center justify-between pb-4 border-b border-white/5">
                      <h3 className="text-sm font-black uppercase tracking-[0.2em] text-white flex items-center gap-2">
                         <Zap size={18} className="text-aura-lime" /> Active Nodes
@@ -652,130 +934,217 @@ export default function CipherAdmin() {
         )}
 
         {activeTab === 'cdeposits' && (
-          <div className="space-y-6">
-            {deposits.map((dep: any) => (
-              <div key={dep.id} className="p-8 bg-white/5 border border-white/5 rounded-3xl flex flex-col lg:flex-row lg:items-center justify-between gap-6 group hover:border-aura-lime/20 transition-all">
-                <div className="flex items-center gap-6">
-                   <div className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-aura-muted group-hover:text-aura-lime transition-all"><CreditCard size={24} /></div>
-                   <div>
-                     <div className="flex items-center gap-3 mb-1">
-                        <span className="text-sm font-bold uppercase">{dep.user_name || 'Unknown'}</span>
-                        <span className={cn("text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded", 
-                          dep.status === 'pending' ? "bg-yellow-400/10 text-yellow-500" :
-                          dep.status === 'approved' ? "bg-aura-lime/10 text-aura-lime" : "bg-red-400/10 text-red-400"
-                        )}>{dep.status}</span>
-                     </div>
-                     <p className="text-[10px] text-aura-muted font-bold uppercase tracking-widest">{dep.method} • <span className="font-mono">{dep.reference}</span></p>
-                   </div>
-                </div>
-                <div className="flex items-center gap-12">
-                   <div className="text-right">
-                      <p className="text-[8px] font-black uppercase tracking-widest text-aura-muted mb-1">Amount</p>
-                      <p className="text-2xl font-black font-serif italic text-white">${dep.amount.toLocaleString()}</p>
-                   </div>
-                   {dep.status === 'pending' && (
-                     <div className="flex gap-2">
-                       <button onClick={() => declineDeposit(dep.id)} className="p-3 bg-red-400/10 text-red-400 hover:bg-red-400 hover:text-white rounded-xl transition-all"><XCircle size={20} /></button>
-                       <button onClick={() => approveDeposit(dep)} className="p-3 bg-aura-lime/10 text-aura-lime hover:bg-aura-lime hover:text-aura-black rounded-xl transition-all"><CheckCircle size={20} /></button>
-                     </div>
+          <div className="space-y-8">
+            <div className="flex bg-white/5 p-1 rounded-2xl w-fit border border-white/5">
+               {['all', 'pending', 'approved', 'rejected'].map((f) => (
+                 <button 
+                   key={f}
+                   onClick={() => setDepositFilter(f as any)}
+                   className={cn(
+                     "px-6 py-2 rounded-xl text-[10px] uppercase font-black tracking-widest transition-all",
+                     depositFilter === f ? "bg-white/10 text-white" : "text-aura-muted hover:text-white"
                    )}
-                </div>
-              </div>
-            ))}
+                 >
+                   {f}
+                 </button>
+               ))}
+            </div>
+
+            <div className="bg-white/5 border border-white/5 rounded-[40px] overflow-hidden overflow-x-auto">
+              <table className="w-full text-left min-w-[1000px] border-collapse">
+                <thead>
+                  <tr className="border-b border-white/5 bg-white/[0.01]">
+                    <th className="px-6 py-5 text-[9px] font-black uppercase tracking-widest text-aura-muted">User ID</th>
+                    <th className="px-6 py-5 text-[9px] font-black uppercase tracking-widest text-aura-muted">Full Name</th>
+                    <th className="px-6 py-5 text-[9px] font-black uppercase tracking-widest text-aura-muted">Email</th>
+                    <th className="px-6 py-5 text-[9px] font-black uppercase tracking-widest text-aura-muted">Amount</th>
+                    <th className="px-6 py-5 text-[9px] font-black uppercase tracking-widest text-aura-muted">Type</th>
+                    <th className="px-6 py-5 text-[9px] font-black uppercase tracking-widest text-aura-muted">Status</th>
+                    <th className="px-6 py-5 text-[9px] font-black uppercase tracking-widest text-aura-muted">Date/Time</th>
+                    <th className="px-6 py-5 text-[9px] font-black uppercase tracking-widest text-aura-muted">Method / Plan</th>
+                    <th className="px-6 py-5 text-[9px] font-black uppercase tracking-widest text-aura-muted text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/[0.02]">
+                  {deposits
+                    .filter((dep: any) => {
+                      if (depositFilter === 'all') return true;
+                      if (depositFilter === 'pending') return dep.status === 'pending';
+                      if (depositFilter === 'approved') return dep.status === 'approved';
+                      if (depositFilter === 'rejected') return dep.status === 'declined' || dep.status === 'rejected';
+                      return true;
+                    })
+                    .map((dep: any) => {
+                      const u = getUserDetails(dep.user_id, dep.user_name);
+                      return (
+                        <tr 
+                          key={dep.id} 
+                          className="group hover:bg-white/[0.02] transition-colors cursor-pointer text-white"
+                          onClick={() => { setSelectedTicket(dep); setTicketType('deposit'); }}
+                        >
+                          <td className="px-6 py-4 font-mono text-[10px] text-gray-400">
+                            <span className="truncate max-w-[80px] block" title={u.id}>{u.id}</span>
+                          </td>
+                          <td className="px-6 py-4 text-xs font-bold uppercase truncate max-w-[120px]">{u.name}</td>
+                          <td className="px-6 py-4 text-xs text-aura-muted truncate max-w-[150px]">{u.email}</td>
+                          <td className="px-6 py-4 text-sm font-black font-serif italic">{formatCurrency(dep.amount || 0)}</td>
+                          <td className="px-6 py-4">
+                            <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-widest">Deposit</span>
+                          </td>
+                          <td className="px-6 py-4">
+                            <span className={cn("text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded", 
+                              dep.status === 'pending' ? "bg-yellow-400/10 text-yellow-500" :
+                              dep.status === 'approved' ? "bg-aura-lime/10 text-aura-lime" : "bg-red-400/10 text-red-100"
+                            )}>{dep.status}</span>
+                          </td>
+                          <td className="px-6 py-4 text-[10px] text-gray-400">
+                            {dep.created_at ? new Date(dep.created_at).toLocaleString() : 'N/A'}
+                          </td>
+                          <td className="px-6 py-4 text-xs uppercase font-black tracking-wider text-aura-muted">{dep.method || 'Standard'}</td>
+                          <td className="px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
+                            {dep.status === 'pending' ? (
+                              <div className="flex gap-2 justify-end">
+                                <button onClick={() => declineDeposit(dep.id)} className="p-2 bg-red-400/10 text-red-400 hover:bg-red-400 hover:text-white rounded-lg transition-all" title="Decline"><XCircle size={16} /></button>
+                                <button onClick={() => approveDeposit(dep)} className="p-2 bg-aura-lime/10 text-aura-lime hover:bg-aura-lime hover:text-aura-black rounded-lg transition-all" title="Approve"><CheckCircle size={16} /></button>
+                              </div>
+                            ) : (
+                              <span className="text-[10px] font-bold text-gray-500 uppercase">Processed</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
 
         {activeTab === 'cwithdrawals' && (
-          <div className="space-y-6">
-            {withdrawals.map((wit: any) => (
-              <div key={wit.id} className="p-8 bg-white/5 border border-white/5 rounded-3xl flex flex-col lg:flex-row lg:items-center justify-between gap-6 group hover:border-red-400/20 transition-all">
-                <div className="flex items-center gap-6">
-                   <div className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-aura-muted group-hover:text-red-400 transition-all"><ArrowDownLeft size={24} /></div>
-                   <div>
-                     <div className="flex items-center gap-3 mb-1">
-                        <span className="text-sm font-bold uppercase">{wit.user_name || 'Unknown'}</span>
-                        <span className={cn("text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded", 
-                          wit.status === 'pending' ? "bg-yellow-400/10 text-yellow-500" :
-                          wit.status === 'approved' ? "bg-aura-lime/10 text-aura-lime" : "bg-red-400/10 text-red-400"
-                        )}>{wit.status}</span>
-                     </div>
-                     <div className="mt-2 space-y-2">
-                        <div className="flex items-center gap-2">
-                           <span className={cn(
-                              "text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md border",
-                              wit.method === 'bank' ? "bg-blue-400/10 border-blue-400/20 text-blue-400" : "bg-purple-400/10 border-purple-400/20 text-purple-400"
-                           )}>
-                              {wit.method === 'bank' ? 'Fiat Settlement' : 'Cyber Settlement'}
-                           </span>
-                           <span className="text-[9px] text-aura-muted font-bold uppercase tracking-widest">{wit.method} Protocol</span>
-                        </div>
-                        
-                        {wit.method === 'bank' ? (
-                           <div className="bg-white/5 p-4 rounded-2xl space-y-2 border border-white/5 min-w-[280px]">
-                              <div className="flex justify-between items-center text-[9px] font-bold uppercase tracking-widest">
-                                 <span className="text-aura-muted">Institution:</span>
-                                 <span className="text-white">{wit.details?.bankName || 'Unknown Bank'}</span>
-                              </div>
-                              <div className="flex justify-between items-center group/copy">
-                                 <span className="text-[9px] font-bold uppercase tracking-widest text-aura-muted">Account Num:</span>
-                                 <div className="flex items-center gap-2">
-                                    <span className="text-[10px] font-mono font-black text-aura-lime tracking-wider">{wit.details?.accNum || 'N/A'}</span>
-                                    <button 
-                                       onClick={() => {
-                                          navigator.clipboard.writeText(wit.details?.accNum || '');
-                                          toast.success("Account copied to terminal clipboard");
-                                       }}
-                                       className="p-1 hover:bg-white/10 rounded-md transition-all text-aura-muted hover:text-aura-lime"
-                                    >
-                                       <Copy size={12} />
-                                    </button>
-                                 </div>
-                              </div>
-                              <div className="flex justify-between items-center text-[9px] font-bold uppercase tracking-widest pt-2 border-t border-white/5">
-                                 <span className="text-aura-muted">Beneficiary:</span>
-                                 <span className="text-white">{wit.details?.accName || 'N/A'}</span>
-                              </div>
-                           </div>
-                        ) : (
-                           <div className="bg-white/5 p-4 rounded-2xl space-y-2 border border-white/5 min-w-[280px]">
-                              <div className="flex justify-between items-center text-[9px] font-bold uppercase tracking-widest">
-                                 <span className="text-aura-muted">Network:</span>
-                                 <span className="text-white">{wit.details?.type?.toUpperCase() || 'USDT'} Protocol</span>
-                              </div>
-                              <div className="flex justify-between items-center group/copy">
-                                 <span className="text-[9px] font-bold uppercase tracking-widest text-aura-muted">Wallet/Address:</span>
-                                 <div className="flex items-center gap-2">
-                                    <span className="text-[9px] font-mono font-black text-aura-lime tracking-tight truncate max-w-[150px]">{wit.details?.address || 'N/A'}</span>
-                                    <button 
-                                       onClick={() => {
-                                          navigator.clipboard.writeText(wit.details?.address || '');
-                                          toast.success("Cyber address copied to terminal");
-                                       }}
-                                       className="p-1 hover:bg-white/10 rounded-md transition-all text-aura-muted hover:text-aura-lime"
-                                    >
-                                       <Copy size={12} />
-                                    </button>
-                                 </div>
-                              </div>
-                           </div>
-                        )}
-                     </div>
-                   </div>
-                </div>
-                <div className="flex items-center gap-12">
-                   <div className="text-right">
-                      <p className="text-[8px] font-black uppercase tracking-widest text-aura-muted mb-1">Amount</p>
-                      <p className="text-2xl font-black font-serif italic text-white">${wit.amount.toLocaleString()}</p>
-                   </div>
-                   {wit.status === 'pending' && (
-                     <div className="flex gap-2">
-                       <button onClick={() => declineWithdrawal(wit)} className="p-3 bg-red-400/10 text-red-400 hover:bg-red-400 hover:text-white rounded-xl transition-all"><XCircle size={20} /></button>
-                       <button onClick={() => approveWithdrawal(wit)} className="p-3 bg-aura-lime/10 text-aura-lime hover:bg-aura-lime hover:text-aura-black rounded-xl transition-all"><CheckCircle size={20} /></button>
-                     </div>
+          <div className="space-y-8">
+            <div className="flex bg-white/5 p-1 rounded-2xl w-fit border border-white/5">
+               {['all', 'pending', 'approved', 'rejected'].map((f) => (
+                 <button 
+                   key={f}
+                   onClick={() => setWithdrawalFilter(f as any)}
+                   className={cn(
+                     "px-6 py-2 rounded-xl text-[10px] uppercase font-black tracking-widest transition-all",
+                     withdrawalFilter === f ? "bg-white/10 text-white" : "text-aura-muted hover:text-white"
                    )}
-                </div>
-              </div>
-            ))}
+                 >
+                   {f}
+                 </button>
+               ))}
+            </div>
+
+            <div className="bg-white/5 border border-white/5 rounded-[40px] overflow-hidden overflow-x-auto">
+              <table className="w-full text-left min-w-[1000px] border-collapse">
+                <thead>
+                  <tr className="border-b border-white/5 bg-white/[0.01]">
+                    <th className="px-6 py-5 text-[9px] font-black uppercase tracking-widest text-aura-muted">User ID</th>
+                    <th className="px-6 py-5 text-[9px] font-black uppercase tracking-widest text-aura-muted">Full Name</th>
+                    <th className="px-6 py-5 text-[9px] font-black uppercase tracking-widest text-aura-muted">Email</th>
+                    <th className="px-6 py-5 text-[9px] font-black uppercase tracking-widest text-aura-muted">Amount</th>
+                    <th className="px-6 py-5 text-[9px] font-black uppercase tracking-widest text-aura-muted">Type</th>
+                    <th className="px-6 py-5 text-[9px] font-black uppercase tracking-widest text-aura-muted">Status</th>
+                    <th className="px-6 py-5 text-[9px] font-black uppercase tracking-widest text-aura-muted">Date/Time</th>
+                    <th className="px-6 py-5 text-[9px] font-black uppercase tracking-widest text-aura-muted">Method / Plan Details</th>
+                    <th className="px-6 py-5 text-[9px] font-black uppercase tracking-widest text-aura-muted text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/[0.02]">
+                  {withdrawals
+                    .filter((wit: any) => {
+                      if (withdrawalFilter === 'all') return true;
+                      if (withdrawalFilter === 'pending') return wit.status === 'pending';
+                      if (withdrawalFilter === 'approved') return wit.status === 'approved';
+                      if (withdrawalFilter === 'rejected') return wit.status === 'declined' || wit.status === 'rejected';
+                      return true;
+                    })
+                    .map((wit: any) => {
+                      const u = getUserDetails(wit.user_id, wit.user_name);
+                      return (
+                        <tr 
+                          key={wit.id} 
+                          className="group hover:bg-white/[0.02] transition-colors cursor-pointer text-white"
+                          onClick={() => { setSelectedTicket(wit); setTicketType('withdrawal'); }}
+                        >
+                          <td className="px-6 py-4 font-mono text-[10px] text-gray-400">
+                            <span className="truncate max-w-[80px] block" title={u.id}>{u.id}</span>
+                          </td>
+                          <td className="px-6 py-4 text-xs font-bold uppercase truncate max-w-[120px]">{u.name}</td>
+                          <td className="px-6 py-4 text-xs text-aura-muted truncate max-w-[150px]">{u.email}</td>
+                          <td className="px-6 py-4 text-sm font-black font-serif italic">{formatCurrency(wit.amount || 0)}</td>
+                          <td className="px-6 py-4">
+                            <span className="text-[10px] font-bold text-red-400 uppercase tracking-widest">Withdrawal</span>
+                          </td>
+                          <td className="px-6 py-4">
+                            <span className={cn("text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded", 
+                              wit.status === 'pending' ? "bg-yellow-400/10 text-yellow-500" :
+                              wit.status === 'approved' ? "bg-aura-lime/10 text-aura-lime" : "bg-red-400/10 text-red-100"
+                            )}>{wit.status}</span>
+                          </td>
+                          <td className="px-6 py-4 text-[10px] text-gray-400">
+                            {wit.created_at ? new Date(wit.created_at).toLocaleString() : 'N/A'}
+                          </td>
+                          <td className="px-6 py-4 text-xs" onClick={(e) => e.stopPropagation()}>
+                            {wit.method === 'bank' ? (
+                              <div className="space-y-1 py-1 max-w-[280px]">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[8px] font-black bg-blue-400/10 text-blue-400 border border-blue-400/15 px-1.5 py-0.5 rounded-md">Fiat</span>
+                                  <span className="font-bold uppercase text-[10px]">{wit.details?.bankName || 'Bank'}</span>
+                                </div>
+                                <div className="text-[10px] text-aura-muted flex items-center gap-1.5 font-mono">
+                                  <span>{wit.details?.accNum || 'N/A'}</span>
+                                  <button 
+                                    onClick={() => {
+                                      navigator.clipboard.writeText(wit.details?.accNum || '');
+                                      toast.success("Account copied");
+                                    }}
+                                    className="hover:text-aura-lime text-gray-500 hover:scale-105 transition-all"
+                                  >
+                                    <Copy size={10} />
+                                  </button>
+                                </div>
+                                <div className="text-[9px] text-gray-500 italic max-w-[200px] truncate">{wit.details?.accName || 'N/A'}</div>
+                              </div>
+                            ) : (
+                              <div className="space-y-1 py-1 max-w-[280px]">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[8px] font-black bg-purple-400/10 text-purple-400 border border-purple-400/15 px-1.5 py-0.5 rounded-md">Cyber</span>
+                                  <span className="font-bold uppercase text-[10px]">{wit.details?.type?.toUpperCase() || 'USDT'}</span>
+                                </div>
+                                <div className="text-[10px] text-aura-muted flex items-center gap-1.5 font-mono animate-fade-in">
+                                  <span className="truncate max-w-[124px]" title={wit.details?.address}>{wit.details?.address || 'N/A'}</span>
+                                  <button 
+                                    onClick={() => {
+                                      navigator.clipboard.writeText(wit.details?.address || '');
+                                      toast.success("Address copied");
+                                    }}
+                                    className="hover:text-aura-lime text-gray-500 hover:scale-105 transition-all"
+                                  >
+                                    <Copy size={10} />
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </td>
+                          <td className="px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
+                            {wit.status === 'pending' ? (
+                              <div className="flex gap-2 justify-end">
+                                <button onClick={() => declineWithdrawal(wit)} className="p-2 bg-red-400/10 text-red-400 hover:bg-red-400 hover:text-white rounded-lg transition-all" title="Decline"><XCircle size={16} /></button>
+                                <button onClick={() => approveWithdrawal(wit)} className="p-2 bg-aura-lime/10 text-aura-lime hover:bg-aura-lime hover:text-aura-black rounded-lg transition-all" title="Approve"><CheckCircle size={16} /></button>
+                              </div>
+                            ) : (
+                              <span className="text-[10px] font-bold text-gray-500 uppercase">Processed</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
 
@@ -796,46 +1165,85 @@ export default function CipherAdmin() {
                ))}
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-              {investments
-                .filter(inv => {
-                  if (investFilter === 'all') return true;
-                  if (investFilter === 'pending') return inv.status === 'pending';
-                  if (investFilter === 'approved') return inv.status === 'active' || inv.status === 'inactive';
-                  if (investFilter === 'rejected') return inv.status === 'rejected';
-                  return true;
-                })
-                .map((inv: any) => (
-                <div key={inv.id} className="p-6 bg-white/5 border border-white/5 rounded-3xl space-y-6 group hover:border-aura-lime/20 transition-all">
-                  <div className="flex justify-between items-start">
-                     <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center text-aura-lime"><Zap size={20} /></div>
-                     <span className={cn("text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded", 
-                        inv.status === 'active' ? "bg-aura-lime/10 text-aura-lime" : 
-                        inv.status === 'inactive' ? "bg-blue-400/10 text-blue-400" :
-                        inv.status === 'rejected' ? "bg-red-400/10 text-red-400" :
-                        "bg-white/10 text-aura-muted"
-                     )}>{inv.status}</span>
-                  </div>
-                  <div>
-                     <p className="text-[9px] font-bold uppercase tracking-widest text-aura-muted mb-1">{inv.user_name || 'Anonymous'}</p>
-                     <p className="text-3xl font-black font-serif italic">{formatCurrency(inv.amount)}</p>
-                  </div>
-                  <div className="pt-4 border-t border-white/5 flex items-center justify-between">
-                     <span className="text-[9px] font-bold uppercase tracking-widest text-aura-muted">{inv.plan_name} Node</span>
-                     <div className="flex gap-4">
-                       {inv.status === 'pending' && (
-                         <>
-                           <button onClick={() => rejectInvestment(inv.id)} className="text-[9px] font-black uppercase tracking-widest text-red-400 hover:underline">Reject</button>
-                           <button onClick={() => approveInvestment(inv)} className="text-[9px] font-black uppercase tracking-widest text-aura-lime hover:underline">Approve</button>
-                         </>
-                       )}
-                       {(inv.status === 'active' || inv.status === 'inactive') && (
-                          <button onClick={() => stopInvestment(inv)} className="text-[9px] font-black uppercase tracking-widest text-red-400 hover:underline">Stop</button>
-                       )}
-                     </div>
-                  </div>
-                </div>
-              ))}
+            <div className="bg-white/5 border border-white/5 rounded-[40px] overflow-hidden overflow-x-auto">
+              <table className="w-full text-left min-w-[1000px] border-collapse">
+                <thead>
+                  <tr className="border-b border-white/5 bg-white/[0.01]">
+                    <th className="px-6 py-5 text-[9px] font-black uppercase tracking-widest text-aura-muted">User ID</th>
+                    <th className="px-6 py-5 text-[9px] font-black uppercase tracking-widest text-aura-muted">Full Name</th>
+                    <th className="px-6 py-5 text-[9px] font-black uppercase tracking-widest text-aura-muted">Email</th>
+                    <th className="px-6 py-5 text-[9px] font-black uppercase tracking-widest text-aura-muted">Amount</th>
+                    <th className="px-6 py-5 text-[9px] font-black uppercase tracking-widest text-aura-muted">Type</th>
+                    <th className="px-6 py-5 text-[9px] font-black uppercase tracking-widest text-aura-muted">Status</th>
+                    <th className="px-6 py-5 text-[9px] font-black uppercase tracking-widest text-aura-muted">Date/Time</th>
+                    <th className="px-6 py-5 text-[9px] font-black uppercase tracking-widest text-aura-muted">Method / Plan</th>
+                    <th className="px-6 py-5 text-[9px] font-black uppercase tracking-widest text-aura-muted text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/[0.02]">
+                  {investments
+                    .filter(inv => {
+                      if (investFilter === 'all') return true;
+                      if (investFilter === 'pending') return inv.status === 'pending';
+                      if (investFilter === 'approved') return inv.status === 'inactive' || inv.status === 'active' || inv.status === 'completed';
+                      if (investFilter === 'rejected') return inv.status === 'rejected';
+                      return true;
+                    })
+                    .map((inv: any) => {
+                      const u = getUserDetails(inv.user_id, inv.user_name);
+                      return (
+                        <tr 
+                          key={inv.id} 
+                          className="group hover:bg-white/[0.02] transition-colors cursor-pointer text-white"
+                          onClick={() => { setSelectedTicket(inv); setTicketType('investment'); }}
+                        >
+                          <td className="px-6 py-4 font-mono text-[10px] text-gray-400">
+                            <span className="truncate max-w-[80px] block" title={u.id}>{u.id}</span>
+                          </td>
+                          <td className="px-6 py-4 text-xs font-bold uppercase truncate max-w-[120px]">{u.name}</td>
+                          <td className="px-6 py-4 text-xs text-aura-muted truncate max-w-[150px]">{u.email}</td>
+                          <td className="px-6 py-4 text-sm font-black font-serif italic">{formatCurrency(inv.amount || 0)}</td>
+                          <td className="px-6 py-4">
+                            <span className="text-[10px] font-bold text-aura-lime uppercase tracking-widest">Investment</span>
+                          </td>
+                          <td className="px-6 py-4">
+                            <span className={cn("text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded", 
+                               inv.status === 'active' ? "bg-aura-lime/10 text-aura-lime" : 
+                               inv.status === 'inactive' ? "bg-blue-400/10 text-blue-400" :
+                               inv.status === 'rejected' ? "bg-red-400/10 text-red-400" :
+                               "bg-white/10 text-aura-muted"
+                            )}>{inv.status}</span>
+                          </td>
+                          <td className="px-6 py-4 text-[10px] text-gray-400">
+                            {inv.created_at ? new Date(inv.created_at).toLocaleString() : 'N/A'}
+                          </td>
+                          <td className="px-6 py-4 text-xs uppercase font-black tracking-wider text-aura-lime">
+                            {inv.plan_name || 'Regular'} Node
+                          </td>
+                          <td className="px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
+                            <div className="flex gap-4 justify-end">
+                              {inv.status === 'pending' && (
+                                <>
+                                  <button onClick={() => rejectInvestment(inv.id)} className="text-[10px] font-black uppercase tracking-widest text-red-400 hover:underline">Reject</button>
+                                  <button onClick={() => approveInvestment(inv)} className="text-[10px] font-black uppercase tracking-widest text-aura-lime hover:underline">Approve</button>
+                                </>
+                              )}
+                              {(inv.status === 'active' || inv.status === 'inactive') && (
+                                 <button onClick={() => stopInvestment(inv)} className="text-[10px] font-black uppercase tracking-widest text-red-400 hover:underline">Stop</button>
+                              )}
+                              {inv.status === 'completed' && (
+                                <span className="text-[10px] text-gray-500 uppercase font-black">Completed</span>
+                              )}
+                              {inv.status === 'rejected' && (
+                                <span className="text-[10px] text-red-500 uppercase font-black">Rejected</span>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
             </div>
           </div>
         )}
@@ -1381,19 +1789,300 @@ export default function CipherAdmin() {
         )}
 
         {activeTab === 'cplans' && (
-           <div className="p-12 text-center border border-white/5 bg-white/5 rounded-[40px] space-y-6">
-              <Zap size={48} className="mx-auto text-aura-lime" />
-              <h3 className="text-xl font-bold uppercase tracking-tight italic font-serif">ROI Engine Controllers</h3>
-              <p className="text-aura-muted text-[10px] uppercase font-bold tracking-widest max-w-xs mx-auto">Investment plans and distribution parameters are currently hardcoded for system stability. Direct database overrides are required for modifications in this version.</p>
-           </div>
+           <CipherPlansEditor plans={plans} />
         )}
 
         {activeTab === 'cnotifications' && (
-           <div className="p-20 text-center bg-white/5 border border-white/10 rounded-[40px] space-y-4">
-              <Mail size={48} className="mx-auto text-aura-lime" />
-              <h3 className="text-xl font-bold uppercase tracking-tight italic font-serif">Broadcast Control</h3>
-              <p className="text-aura-muted text-[10px] uppercase font-bold tracking-widest max-w-xs mx-auto">Push notification engine and global broadcast protocols are currently operating in manual mode. Real-time broadcast UI pending deployment.</p>
-           </div>
+          <div className="space-y-8 text-white">
+            {/* Header & Status bar */}
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-white/5 pb-6">
+              <div>
+                <span className="text-[10px] font-black uppercase tracking-[0.2em] px-3 py-1 bg-aura-lime/10 text-aura-lime rounded-full border border-aura-lime/20">
+                  Cipher Alert Network Protocols
+                </span>
+                <h2 className="text-3xl font-black font-serif italic mt-2">Broadcast Control Center</h2>
+              </div>
+              <div className="flex gap-4 items-center">
+                <span className="text-[10px] font-mono text-aura-muted uppercase bg-white/5 px-3 py-1.5 rounded-lg border border-white/5">
+                  Connected Node Directory: {users.length} Clients
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+              {/* LEFT COLUMN: COMPOSER (lg:col-span-5) */}
+              <div className="lg:col-span-[5] bg-white/[0.02] border border-white/5 rounded-[40px] p-6 sm:p-8 space-y-6">
+                <div>
+                  <h3 className="text-xs font-black uppercase tracking-widest text-aura-lime flex items-center gap-2 mb-1">
+                    <Mail size={16} /> Broadcast Composer
+                  </h3>
+                  <p className="text-[9px] text-aura-muted uppercase tracking-wider">Configure dispatch parameters for client terminal display notifications.</p>
+                </div>
+
+                {/* Form fields */}
+                <div className="space-y-4">
+                  {/* Title */}
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-aura-muted block">Message Title</label>
+                    <input 
+                      type="text"
+                      value={notifTitle}
+                      onChange={(e) => setNotifTitle(e.target.value)}
+                      placeholder="e.g. Security Update Node Activation"
+                      className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm focus:border-aura-lime/40 outline-none transition-all placeholder:text-white/20 font-bold"
+                    />
+                  </div>
+
+                  {/* Body */}
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-aura-muted block">Message Body Details</label>
+                    <textarea 
+                      value={notifMessage}
+                      onChange={(e) => setNotifMessage(e.target.value)}
+                      placeholder="Enter specific broadcast statement here..."
+                      rows={5}
+                      className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm focus:border-aura-lime/40 outline-none transition-all placeholder:text-white/20 font-medium"
+                    />
+                  </div>
+
+                  {/* Targeting Selection */}
+                  <div className="space-y-2 pt-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-aura-muted block mb-2">Recipient Scope Targeting</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        { id: 'all', label: 'Send to All', desc: 'Deliver broadcast instantly to every user.', count: users.length },
+                        { id: 'selected', label: `Send to Selected`, desc: 'Target specifically ticked accounts.', count: selectedUserIds.length },
+                        { id: 'inactive', label: 'Send to Inactive', desc: 'Target clients without active nodes.', count: users.filter(u => !investments.some(i => i.user_id === u.id && i.status === 'active')).length },
+                        { id: 'inactive_investors', label: 'Inactive Investors', desc: 'Exclude users with running nodes.', count: users.filter(u => {
+                          const hasActiveNodes = investments.some(i => i.user_id === u.id && i.status === 'active');
+                          const hasAnyNodes = investments.some(i => i.user_id === u.id);
+                          return !hasActiveNodes && hasAnyNodes;
+                        }).length }
+                      ].map((scope) => (
+                        <button
+                          key={scope.id}
+                          type="button"
+                          onClick={() => setNotifTarget(scope.id as any)}
+                          className={cn(
+                            "p-3 rounded-xl border text-left flex flex-col justify-between transition-all duration-300 min-h-[100px]",
+                            notifTarget === scope.id 
+                              ? "bg-aura-lime/10 border-aura-lime text-white" 
+                              : "bg-white/[0.01] border-white/5 text-gray-400 hover:border-white/10"
+                          )}
+                        >
+                          <div>
+                            <p className={cn("text-xs font-black uppercase tracking-wider", notifTarget === scope.id ? "text-aura-lime" : "text-white")}>
+                              {scope.label}
+                            </p>
+                            <p className="text-[8px] text-gray-500 mt-1 leading-normal uppercase">{scope.desc}</p>
+                          </div>
+                          <span className="text-[10px] font-mono font-bold mt-2 self-end px-2 py-0.5 bg-white/5 rounded">
+                            {scope.count} target{scope.count !== 1 ? 's' : ''}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-4 border-t border-white/5">
+                  <button
+                    onClick={sendNotifications}
+                    disabled={isSendingNotif}
+                    className="w-full py-4 bg-aura-lime hover:bg-aura-lime/90 disabled:bg-white/5 text-black disabled:text-aura-muted font-black text-xs uppercase tracking-widest transition-all rounded-xl shadow-lg flex items-center justify-center gap-2"
+                  >
+                    {isSendingNotif ? (
+                      <>
+                        <RefreshCw className="animate-spin" size={16} /> Dispersing Alerts...
+                      </>
+                    ) : (
+                      <>
+                        <Play size={14} fill="currentColor" /> Dispatch Protocol Message
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {/* RIGHT COLUMN: RECIPIENT LIST TARGETING (lg:col-span-12 items direction) */}
+              <div className="lg:col-span-[7] bg-white/[0.02] border border-white/5 rounded-[40px] p-6 sm:p-8 space-y-6 flex flex-col h-[700px]">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                  <div>
+                    <h3 className="text-xs font-black uppercase tracking-widest text-aura-lime flex items-center gap-2 mb-1">
+                      <Search size={16} /> Audience Directory Filters
+                    </h3>
+                    <p className="text-[9px] text-aura-muted uppercase tracking-wider">Browse, filter, and manually select clients for custom target alert dispatches.</p>
+                  </div>
+                  {/* Bulk Select all displayed */}
+                  <button 
+                    onClick={() => {
+                      // Get all currently visible matching users
+                      const visibleUsers = users.filter(u => {
+                        const matchesSearch = u.name?.toLowerCase().includes(notifSearchTerm.toLowerCase()) || u.email?.toLowerCase().includes(notifSearchTerm.toLowerCase()) || u.id?.toLowerCase().includes(notifSearchTerm.toLowerCase());
+                        const activeNodesCount = investments.filter(i => i.user_id === u.id && i.status === 'active').length;
+                        const totalNodesCount = investments.filter(i => i.user_id === u.id).length;
+                        
+                        if (notifUserFilter === 'inactive') {
+                          if (activeNodesCount > 0) return false;
+                        } else if (notifUserFilter === 'inactive_investors') {
+                          if (activeNodesCount > 0 || totalNodesCount === 0) return false;
+                        }
+                        return matchesSearch;
+                      });
+                      
+                      const visibleIds = visibleUsers.map(u => u.id);
+                      const allSelected = visibleIds.every(id => selectedUserIds.includes(id));
+                      if (allSelected) {
+                        // De-select Visible
+                        setSelectedUserIds(selectedUserIds.filter(id => !visibleIds.includes(id)));
+                      } else {
+                        // Select Visible
+                        setSelectedUserIds(Array.from(new Set([...selectedUserIds, ...visibleIds])));
+                      }
+                    }}
+                    className="text-[9px] font-black uppercase tracking-widest text-aura-lime bg-aura-lime/5 px-3 py-1.5 rounded-lg border border-aura-lime/10 hover:bg-aura-lime hover:text-black transition-all"
+                  >
+                    Toggle Select All Filtered
+                  </button>
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-4">
+                  {/* Category toggle tabs */}
+                  <div className="flex bg-white/5 p-1 rounded-xl">
+                    {[
+                      { id: 'all', label: 'All Users' },
+                      { id: 'inactive', label: 'Inactive Users' },
+                      { id: 'inactive_investors', label: 'Inactive Investors' }
+                    ].map((tab) => (
+                      <button
+                        key={tab.id}
+                        onClick={() => setNotifUserFilter(tab.id as any)}
+                        className={cn(
+                          "px-3 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all whitespace-nowrap",
+                          notifUserFilter === tab.id ? "bg-aura-lime text-black" : "text-aura-muted hover:text-white"
+                        )}
+                      >
+                        {tab.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Search filter input */}
+                  <div className="relative flex-1">
+                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/30" size={14} />
+                    <input 
+                      type="text"
+                      placeholder="Search by name, email, or id..."
+                      value={notifSearchTerm}
+                      onChange={(e) => setNotifSearchTerm(e.target.value)}
+                      className="w-full bg-black/40 border border-white/5 rounded-xl pl-10 pr-4 py-2.5 text-xs outline-none focus:border-white/10 placeholder:text-white/20 font-bold"
+                    />
+                  </div>
+                </div>
+
+                {/* Directory list scroll screen */}
+                <div className="flex-1 overflow-y-auto pr-2 divide-y divide-white/5 scrollbar-none space-y-2">
+                  {users
+                    .filter(u => {
+                      const matchesSearch = u.name?.toLowerCase().includes(notifSearchTerm.toLowerCase()) || u.email?.toLowerCase().includes(notifSearchTerm.toLowerCase()) || u.id?.toLowerCase().includes(notifSearchTerm.toLowerCase());
+                      const activeNodesCount = investments.filter(i => i.user_id === u.id && i.status === 'active').length;
+                      const totalNodesCount = investments.filter(i => i.user_id === u.id).length;
+                      
+                      if (notifUserFilter === 'inactive') {
+                        if (activeNodesCount > 0) return false;
+                      } else if (notifUserFilter === 'inactive_investors') {
+                        if (activeNodesCount > 0 || totalNodesCount === 0) return false;
+                      }
+                      return matchesSearch;
+                    })
+                    .map((u) => {
+                      const isSelected = selectedUserIds.includes(u.id);
+                      const activeNodesCount = investments.filter(i => i.user_id === u.id && i.status === 'active').length;
+                      const totalNodesCount = investments.filter(i => i.user_id === u.id).length;
+
+                      return (
+                        <div 
+                          key={u.id}
+                          onClick={() => {
+                            if (isSelected) {
+                              setSelectedUserIds(selectedUserIds.filter(id => id !== u.id));
+                            } else {
+                              setSelectedUserIds([...selectedUserIds, u.id]);
+                            }
+                          }}
+                          className={cn(
+                            "py-3 px-4 rounded-xl flex items-center justify-between cursor-pointer transition-all duration-200 border",
+                            isSelected 
+                              ? "bg-aura-lime/[0.03] border-aura-lime/20" 
+                              : "border-transparent hover:bg-white/[0.01]"
+                          )}
+                        >
+                          <div className="flex items-center gap-4 min-w-0">
+                            {/* Checkbox */}
+                            <input 
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => {}} // toggled by outer parent click helper
+                              className="w-3.5 h-3.5 accent-aura-lime cursor-pointer bg-white/10"
+                            />
+                            {/* Avatar */}
+                            <div className="w-9 h-9 font-black text-xs text-black bg-aura-lime rounded-lg flex items-center justify-center shrink-0 uppercase w-9 h-9">
+                              {u.name?.[0] || 'U'}
+                            </div>
+                            
+                            {/* Details layout */}
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs font-black uppercase text-white truncate max-w-[120px] block" title={u.name}>{u.name || 'Anonymous client'}</span>
+                                <span className="text-[8px] font-mono text-aura-muted shrink-0">@{u.username || 'no_uname'}</span>
+                              </div>
+                              <div className="flex flex-col sm:flex-row sm:items-center gap-0.5 sm:gap-2 text-[8px] text-gray-400 font-mono">
+                                <span className="truncate max-w-[100px]" title={u?.id}>ID: {u.id}</span>
+                                <span className="hidden sm:inline text-gray-600">|</span>
+                                <span className="truncate max-w-[150px]" title={u?.email}>{u.email || 'no-email'}</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Node Investment Status tracking */}
+                          <div className="text-right shrink-0 pl-2">
+                            {activeNodesCount > 0 ? (
+                              <div className="text-[9px] font-black uppercase tracking-wider text-aura-lime bg-aura-lime/10 px-2.5 py-1 rounded">
+                                {activeNodesCount} Running Node{activeNodesCount !== 1 ? 's' : ''}
+                              </div>
+                            ) : (
+                              <div className="text-[9px] font-black uppercase tracking-wider text-red-400 bg-red-400/10 px-2.5 py-1 rounded">
+                                Inactive User
+                              </div>
+                            )}
+                            <div className="text-[7px] text-aura-muted uppercase tracking-widest font-black mt-1">
+                              History Nodes: {totalNodesCount}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                  {users.filter(u => {
+                    const matchesSearch = u.name?.toLowerCase().includes(notifSearchTerm.toLowerCase()) || u.email?.toLowerCase().includes(notifSearchTerm.toLowerCase()) || u.id?.toLowerCase().includes(notifSearchTerm.toLowerCase());
+                    const activeNodesCount = investments.filter(i => i.user_id === u.id && i.status === 'active').length;
+                    const totalNodesCount = investments.filter(i => i.user_id === u.id).length;
+                    
+                    if (notifUserFilter === 'inactive') {
+                      if (activeNodesCount > 0) return false;
+                    } else if (notifUserFilter === 'inactive_investors') {
+                      if (activeNodesCount > 0 || totalNodesCount === 0) return false;
+                    }
+                    return matchesSearch;
+                  }).length === 0 && (
+                    <div className="text-center py-20">
+                      <p className="text-[10px] uppercase font-black tracking-widest text-aura-muted">No Clients Found matching Filter Parameters</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
         )}
         
         {activeTab === 'csecurity' && (
@@ -1491,6 +2180,784 @@ export default function CipherAdmin() {
           </div>
         )}
       </main>
+
+      {/* CIPHER TICKET OVERLAY DETAILED RECEIPT */}
+      <AnimatePresence>
+        {selectedTicket && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-[#020202]/90 backdrop-blur-md z-[9999] flex items-center justify-center p-4 overflow-y-auto"
+            onClick={() => setSelectedTicket(null)}
+          >
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              transition={{ type: "spring", duration: 0.5 }}
+              className="bg-[#0c0c0e] border border-white/10 rounded-[40px] w-full max-w-2xl p-8 space-y-8 relative my-8 overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Close Button */}
+              <button 
+                onClick={() => setSelectedTicket(null)}
+                className="absolute top-6 right-6 p-2 text-aura-muted hover:text-white hover:bg-white/5 rounded-full transition-all"
+              >
+                <X size={20} />
+              </button>
+
+              {/* Header */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-3">
+                  <span className="text-[10px] font-black uppercase tracking-widest px-3 py-1 bg-aura-lime/10 text-aura-lime rounded-full border border-aura-lime/20">
+                    Cipher Secure Protocol
+                  </span>
+                  <span className="text-[10px] font-mono text-aura-muted">
+                    ID: {selectedTicket.id?.substring(0, 16)}...
+                  </span>
+                </div>
+                <h3 className="text-2xl font-black font-serif italic text-white capitalize">
+                  {ticketType} Ticket
+                </h3>
+              </div>
+
+              {/* Split Info */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 text-white">
+                {/* Left Column: Transaction Metadata */}
+                <div className="space-y-4">
+                  <h4 className="text-[10px] font-black uppercase tracking-widest text-aura-muted border-b border-white/5 pb-2">
+                    Transaction Specification
+                  </h4>
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-aura-muted uppercase font-bold text-[10px]">Reference:</span>
+                      <span className="font-mono text-white text-xs">{selectedTicket.reference || selectedTicket.id || 'N/A'}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-aura-muted uppercase font-bold text-[10px]">Amount:</span>
+                      <span className="text-lg font-black text-white font-serif italic">
+                        {formatCurrency(selectedTicket.amount || 0)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-aura-muted uppercase font-bold text-[10px]">Status:</span>
+                      <span className={cn(
+                        "text-[9px] font-black uppercase tracking-widest px-2.5 py-0.5 rounded",
+                        selectedTicket.status === 'pending' ? "bg-yellow-400/10 text-yellow-500" :
+                        selectedTicket.status === 'approved' || selectedTicket.status === 'active' ? "bg-aura-lime/10 text-aura-lime" :
+                        "bg-red-400/10 text-red-500"
+                      )}>
+                        {selectedTicket.status}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-aura-muted uppercase font-bold text-[10px]">Timestamp:</span>
+                      <span className="text-white text-xs">
+                        {selectedTicket.created_at ? new Date(selectedTicket.created_at).toLocaleString() : 'N/A'}
+                      </span>
+                    </div>
+                    {/* Sub-details depending on method/type */}
+                    {ticketType === 'investment' && (
+                      <div className="flex justify-between items-center text-xs pt-1">
+                        <span className="text-aura-muted uppercase font-bold text-[10px]">Investment Plan:</span>
+                        <span className="text-aura-lime uppercase font-black tracking-widest text-[10px]">
+                          {selectedTicket.plan_name || 'Regular'} Node
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Settlement specifications for withdrawals or deposits */}
+                  {ticketType === 'withdrawal' && (
+                    <div className="p-4 bg-white/[0.02] border border-white/5 rounded-2xl space-y-2 mt-4 text-white">
+                      <p className="text-[8px] font-black uppercase tracking-widest text-aura-muted">Destination Details</p>
+                      {selectedTicket.method === 'bank' ? (
+                        <div className="space-y-1">
+                          <div className="flex justify-between text-[10px]">
+                            <span className="text-aura-muted">Bank Name:</span>
+                            <span className="text-white font-bold">{selectedTicket.details?.bankName || 'N/A'}</span>
+                          </div>
+                          <div className="flex justify-between text-[10px]">
+                            <span className="text-aura-muted">Account Number:</span>
+                            <div className="flex items-center gap-1">
+                              <span className="text-white font-mono">{selectedTicket.details?.accNum || 'N/A'}</span>
+                              <button 
+                                onClick={() => {
+                                  navigator.clipboard.writeText(selectedTicket.details?.accNum || '');
+                                  toast.success("Account copied");
+                                }}
+                                className="text-aura-lime hover:text-white"
+                              >
+                                <Copy size={10} />
+                              </button>
+                            </div>
+                          </div>
+                          <div className="flex justify-between text-[10px]">
+                            <span className="text-aura-muted">Holder Name:</span>
+                            <span className="text-white">{selectedTicket.details?.accName || 'N/A'}</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="space-y-1">
+                          <div className="flex justify-between text-[10px]">
+                            <span className="text-aura-muted">Network Protocol:</span>
+                            <span className="text-white font-bold">{selectedTicket.details?.type?.toUpperCase() || 'USDT'}</span>
+                          </div>
+                          <div className="flex justify-between text-[10px]">
+                            <span className="text-aura-muted">Wallet Location:</span>
+                            <div className="flex items-center gap-1">
+                              <span className="text-white font-mono text-[9px] truncate max-w-[140px] block" title={selectedTicket.details?.address}>{selectedTicket.details?.address || 'N/A'}</span>
+                              <button 
+                                onClick={() => {
+                                  navigator.clipboard.writeText(selectedTicket.details?.address || '');
+                                  toast.success("Address copied");
+                                }}
+                                className="text-aura-lime hover:text-white"
+                              >
+                                <Copy size={10} />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Right Column: User Profile Identification */}
+                {(() => {
+                  const matchedUser = users.find(u => u.id === selectedTicket.user_id);
+                  return (
+                    <div className="space-y-4">
+                      <h4 className="text-[10px] font-black uppercase tracking-widest text-aura-muted border-b border-white/5 pb-2">
+                        User Identification Credentials
+                      </h4>
+                      <div className="space-y-3">
+                        <div className="flex justify-between items-center text-xs">
+                          <span className="text-aura-muted uppercase font-bold text-[10px]">User Account ID:</span>
+                          <span className="font-mono text-white text-[10px] truncate max-w-[140px] block" title={selectedTicket.user_id}>
+                            {selectedTicket.user_id || 'N/A'}
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center text-xs">
+                          <span className="text-aura-muted uppercase font-bold text-[10px]">Full Name:</span>
+                          <span className="text-white font-bold uppercase text-xs">{matchedUser?.name || selectedTicket.user_name || 'Anonymous User'}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-xs">
+                          <span className="text-aura-muted uppercase font-bold text-[10px]">Email Address:</span>
+                          <span className="text-white text-xs truncate max-w-[150px] block" title={matchedUser?.email}>{matchedUser?.email || 'N/A'}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-xs">
+                          <span className="text-aura-muted uppercase font-bold text-[10px]">Geographic Origin:</span>
+                          <span className="text-white font-bold text-xs uppercase">{matchedUser?.countryName || matchedUser?.country || 'Global/Undefined'}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-xs">
+                          <span className="text-aura-muted uppercase font-bold text-[10px]">Available Balance:</span>
+                          <span className="text-aura-lime font-mono font-bold text-xs">
+                            {formatCurrency(matchedUser?.available_balance || 0)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center text-xs">
+                          <span className="text-aura-muted uppercase font-bold text-[10px]">Investment Value:</span>
+                          <span className="text-cyan-400 font-mono font-bold text-xs">
+                            {formatCurrency(matchedUser?.total_invested || 0)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* Footer Controls / Actions */}
+              <div className="pt-6 border-t border-white/5 flex flex-col sm:flex-row gap-3 justify-end">
+                <button 
+                  onClick={() => setSelectedTicket(null)}
+                  className="px-6 py-3 bg-white/5 hover:bg-white/10 text-white rounded-xl text-xs uppercase font-black tracking-widest transition-all"
+                >
+                  Close Verification Panel
+                </button>
+                
+                {selectedTicket.status === 'pending' && (
+                  <div className="flex gap-3">
+                    <button 
+                      onClick={() => {
+                        if (ticketType === 'deposit') declineDeposit(selectedTicket.id);
+                        if (ticketType === 'withdrawal') declineWithdrawal(selectedTicket);
+                        if (ticketType === 'investment') rejectInvestment(selectedTicket.id);
+                        setSelectedTicket(null);
+                      }}
+                      className="px-6 py-3 bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white rounded-xl text-xs uppercase font-black tracking-widest transition-all border border-red-500/20"
+                    >
+                      Decline/Reject
+                    </button>
+                    <button 
+                      onClick={() => {
+                        if (ticketType === 'deposit') approveDeposit(selectedTicket);
+                        if (ticketType === 'withdrawal') approveWithdrawal(selectedTicket);
+                        if (ticketType === 'investment') approveInvestment(selectedTicket);
+                        setSelectedTicket(null);
+                      }}
+                      className="px-6 py-3 bg-aura-lime text-aura-black hover:bg-aura-lime/95 rounded-xl text-xs uppercase font-black tracking-widest transition-all"
+                    >
+                      Authorize & Approve
+                    </button>
+                  </div>
+                )}
+
+                {ticketType === 'investment' && (selectedTicket.status === 'active' || selectedTicket.status === 'inactive') ? (
+                  <button 
+                    onClick={() => {
+                      stopInvestment(selectedTicket);
+                      setSelectedTicket(null);
+                    }}
+                    className="px-6 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs uppercase font-black tracking-widest transition-all"
+                  >
+                    Emergency Stop Investment Node
+                  </button>
+                ) : null}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* INVESTMENTS PREVIEW OVERLAY */}
+      <AnimatePresence>
+        {investmentPreviewType && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-[#020202]/95 backdrop-blur-md z-[9999] flex items-center justify-center p-4 overflow-y-auto"
+            onClick={() => setInvestmentPreviewType(null)}
+          >
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              transition={{ type: "spring", duration: 0.5 }}
+              className="bg-[#0c0c0e] border border-white/10 rounded-[40px] w-full max-w-4xl p-8 space-y-8 relative my-8"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Close Button */}
+              <button 
+                onClick={() => setInvestmentPreviewType(null)}
+                className="absolute top-6 right-6 p-2 text-aura-muted hover:text-white hover:bg-white/5 rounded-full transition-all"
+              >
+                <X size={20} />
+              </button>
+
+              {/* Header */}
+              <div className="space-y-2">
+                <span className="text-[10px] font-black uppercase tracking-widest px-3 py-1 bg-aura-lime/10 text-aura-lime rounded-full border border-aura-lime/20">
+                  Cipher Real-time Monitoring
+                </span>
+                <h3 className="text-2xl font-black font-serif italic text-white">
+                  {investmentPreviewType === 'active' ? 'Active investments' : 'Inactive investments'} Preview List
+                </h3>
+              </div>
+
+              {/* List Table */}
+              <div className="bg-white/[0.02] border border-white/5 rounded-[24px] overflow-hidden overflow-x-auto min-h-[200px] max-h-[450px]">
+                <table className="w-full text-left min-w-[700px] border-collapse">
+                  <thead>
+                    <tr className="border-b border-white/5 bg-white/[0.01]">
+                      <th className="px-6 py-4 text-[9px] font-black uppercase tracking-widest text-aura-muted">User ID</th>
+                      <th className="px-6 py-4 text-[9px] font-black uppercase tracking-widest text-aura-muted">Full Name / Username</th>
+                      <th className="px-6 py-4 text-[9px] font-black uppercase tracking-widest text-aura-muted">Email</th>
+                      <th className="px-6 py-4 text-[9px] font-black uppercase tracking-widest text-aura-muted">Investment Plan</th>
+                      <th className="px-6 py-4 text-[9px] font-black uppercase tracking-widest text-aura-muted">Amount</th>
+                      <th className="px-6 py-4 text-[9px] font-black uppercase tracking-widest text-aura-muted">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/[0.02] text-white">
+                    {(investmentPreviewType === 'active' 
+                      ? investments.filter((i: any) => i.status === 'active')
+                      : investments.filter((i: any) => i.status === 'inactive' || i.status === 'stopped' || i.status === 'completed' || i.status === 'rejected')
+                    ).map((inv: any) => {
+                      const u = getUserDetails(inv.user_id, inv.user_name);
+                      const matchedUser = users.find(x => x.id === inv.user_id);
+                      return (
+                        <tr key={inv.id} className="hover:bg-white/[0.02] transition-colors">
+                          <td className="px-6 py-3 font-mono text-[10px] text-gray-400">
+                            <span className="truncate max-w-[100px] block font-mono font-bold" title={inv.user_id}>{inv.user_id}</span>
+                          </td>
+                          <td className="px-6 py-3">
+                            <div className="text-xs font-bold uppercase">{u.name}</div>
+                            <div className="text-[9px] text-gray-500 font-mono">@{matchedUser?.username || 'no_uname'}</div>
+                          </td>
+                          <td className="px-6 py-3 text-xs text-aura-muted font-mono">{matchedUser?.email || u.email}</td>
+                          <td className="px-6 py-3">
+                            <span className="text-[10px] font-black uppercase tracking-wider text-aura-lime bg-aura-lime/5 px-2 py-0.5 rounded border border-aura-lime/10">
+                              {inv.plan_name || 'Regular'} Node
+                            </span>
+                          </td>
+                          <td className="px-6 py-3 text-sm font-black font-serif italic text-white/90">
+                            {formatCurrency(inv.amount || 0)}
+                          </td>
+                          <td className="px-6 py-3">
+                            <span className={cn("text-[8px] font-black uppercase tracking-widest px-2.5 py-0.5 rounded", 
+                              inv.status === 'active' ? "bg-aura-lime/10 text-aura-lime" : 
+                              inv.status === 'inactive' ? "bg-blue-400/10 text-blue-400" :
+                              inv.status === 'completed' ? "bg-green-400/10 text-green-400" :
+                              "bg-red-400/10 text-red-500"
+                            )}>
+                              {inv.status}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {(investmentPreviewType === 'active' 
+                      ? investments.filter((i: any) => i.status === 'active').length 
+                      : investments.filter((i: any) => i.status === 'inactive' || i.status === 'stopped' || i.status === 'completed' || i.status === 'rejected').length
+                    ) === 0 && (
+                      <tr>
+                        <td colSpan={6} className="text-center px-6 py-12 text-xs font-bold uppercase tracking-widest text-aura-muted">
+                          No {investmentPreviewType} investments detected in real-time sync.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="flex justify-end pt-4 border-t border-white/5">
+                <button 
+                  onClick={() => setInvestmentPreviewType(null)}
+                  className="px-6 py-3 bg-white/5 hover:bg-white/10 text-white rounded-xl text-xs uppercase font-black tracking-widest transition-all"
+                >
+                  Close Monitor Panel
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+interface CipherPlansEditorProps {
+  plans: any[];
+}
+
+export function CipherPlansEditor({ plans }: CipherPlansEditorProps) {
+  const [localPlans, setLocalPlans] = useState<any[]>([]);
+  const [loadingId, setLoadingId] = useState<string | null>(null);
+  const [resetting, setResetting] = useState(false);
+
+  useEffect(() => {
+    if (plans && plans.length > 0) {
+      setLocalPlans(plans.map(p => ({
+        ...p,
+        roiPercent: (p.roi * 100).toString(),
+        minStr: p.min.toString(),
+        maxStr: p.max.toString(),
+        minWithdrawalStr: (p.minWithdrawal || 0).toString(),
+        durationStr: (p.duration || 1).toString()
+      })));
+    }
+  }, [plans]);
+
+  const handleChangeField = (id: string, field: string, value: any) => {
+    setLocalPlans(prev => prev.map(p => {
+      if (p.id === id) {
+        return { ...p, [field]: value };
+      }
+      return p;
+    }));
+  };
+
+  const handleSavePlan = async (id: string) => {
+    const plan = localPlans.find(p => p.id === id);
+    if (!plan) return;
+
+    setLoadingId(id);
+    try {
+      const roiNum = parseFloat(plan.roiPercent) / 100;
+      const minNum = parseFloat(plan.minStr);
+      const maxNum = parseFloat(plan.maxStr);
+      const durationNum = parseInt(plan.durationStr) || 1;
+      const minWithdrawalNum = parseFloat(plan.minWithdrawalStr) || 0;
+
+      if (isNaN(roiNum) || isNaN(minNum) || isNaN(maxNum)) {
+        toast.error("Please provide valid numeric fields.");
+        return;
+      }
+
+      const docRef = doc(db, 'investment_plans', id);
+      const updatePayload = {
+        name: plan.name,
+        description: plan.description || '',
+        roi: roiNum,
+        min: minNum,
+        max: maxNum,
+        duration: durationNum,
+        minWithdrawal: minWithdrawalNum,
+        active_status: plan.active_status !== false,
+        card_background: plan.card_background || '',
+        card_border: plan.card_border || '',
+        accent_color: plan.accent_color || '',
+        updated_at: new Date().toISOString()
+      };
+
+      await setDoc(docRef, updatePayload, { merge: true });
+      toast.success(`${plan.name} configuration saved successfully!`);
+      
+      await logAudit('update_investment_plan', `Updated ${plan.name} (ROI: ${plan.roiPercent}%, min: ${minNum}, max: ${maxNum})`);
+    } catch (err: any) {
+      toast.error(`Error saving plan: ${err?.message || err}`);
+    } finally {
+      setLoadingId(null);
+    }
+  };
+
+  const handleInitializeDefaults = async () => {
+    if (!window.confirm("Initialize or recover factory fallback investment plans? This resets all changes.")) return;
+    setResetting(true);
+    try {
+      const DEFAULT_PLANS = [
+        {
+          id: 'regular',
+          name: 'Regular',
+          min: 10,
+          max: 40000,
+          roi: 0.025,
+          minWithdrawal: 3,
+          description: 'Stable entry-level investment plan.',
+          color: 'text-blue-400',
+          accentColor: '#3B82F6',
+          borderColor: 'border-blue-500/20',
+          bgColor: 'bg-[#0f172a]',
+          buttonColor: 'bg-blue-600 hover:bg-blue-500 active:bg-blue-700',
+          gradient: 'from-blue-500/20 to-indigo-500/10',
+          duration: 1,
+          active_status: true
+        },
+        {
+          id: 'premium',
+          name: 'Premium',
+          min: 50000,
+          max: 900000,
+          roi: 0.027,
+          minWithdrawal: 15000,
+          description: 'Advanced plan for high-volume investors.',
+          color: 'text-emerald-400',
+          accentColor: '#10B981',
+          borderColor: 'border-emerald-500/20',
+          bgColor: 'bg-[#064e3b]/20',
+          buttonColor: 'bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700',
+          gradient: 'from-emerald-500/20 to-teal-500/10',
+          duration: 3,
+          active_status: true
+        },
+        {
+          id: 'elite',
+          name: 'Elite',
+          min: 1000000,
+          max: 10000000,
+          roi: 0.029,
+          minWithdrawal: 30000,
+          description: 'Institutional-grade investment plan.',
+          color: 'text-amber-400',
+          accentColor: '#F59E0B',
+          borderColor: 'border-amber-500/20',
+          bgColor: 'bg-[#4c1d95]/20',
+          buttonColor: 'bg-amber-500 hover:bg-amber-400 active:bg-amber-600',
+          gradient: 'from-amber-500/20 to-purple-500/20',
+          duration: 7,
+          active_status: true
+        }
+      ];
+
+      for (const plan of DEFAULT_PLANS) {
+        const docRef = doc(db, 'investment_plans', plan.id);
+        await setDoc(docRef, {
+          ...plan,
+          updated_at: new Date().toISOString()
+        });
+      }
+      toast.success("Default plans mounted and synchronized successfully!");
+    } catch (err: any) {
+      toast.error(`Restore failed: ${err?.message || err}`);
+    } finally {
+      setResetting(false);
+    }
+  };
+
+  return (
+    <div className="space-y-8 text-white">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-white/5 pb-6">
+        <div>
+          <span className="text-[10px] font-black uppercase tracking-[0.2em] px-3 py-1 bg-aura-lime/10 text-aura-lime rounded-full border border-aura-lime/20">
+            Cipher ROI Index Protocols
+          </span>
+          <h2 className="text-3xl font-black font-serif italic mt-2">Yield Engine Controllers</h2>
+        </div>
+        <div>
+          <button 
+            disabled={resetting}
+            onClick={handleInitializeDefaults}
+            className="px-5 py-3 bg-white/5 hover:bg-white/10 text-white rounded-xl text-xs uppercase font-black tracking-widest border border-white/5 transition-all inline-flex items-center gap-2 active:scale-95 disabled:opacity-50"
+          >
+            <RefreshCw size={14} className={cn(resetting && "animate-spin")} />
+            Reset Factory Defaults
+          </button>
+        </div>
+      </div>
+
+      {localPlans.length === 0 ? (
+        <div className="p-16 text-center bg-white/[0.01] border border-white/5 rounded-[40px] space-y-4">
+          <Zap size={32} className="mx-auto text-aura-muted animate-pulse" />
+          <h3 className="text-sm font-black uppercase tracking-widest text-aura-muted">No Live Plans Initialized</h3>
+          <p className="text-[10px] text-aura-muted uppercase tracking-wider max-w-xs mx-auto">Click "Reset Factory Defaults" above to quickly seed the standard Regular, Premium, and Elite tiers on Firestore.</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-8">
+          {localPlans.map((plan) => {
+            const customCardStyle: React.CSSProperties = {};
+            if (plan.card_background) customCardStyle.backgroundColor = plan.card_background;
+            if (plan.card_border) customCardStyle.borderColor = plan.card_border;
+            if (plan.accent_color) customCardStyle.boxShadow = `0 10px 40px -10px ${plan.accent_color}66`;
+
+            return (
+              <div 
+                key={plan.id}
+                className="bg-white/[0.02] border border-white/5 rounded-[40px] p-6 sm:p-8 space-y-6"
+              >
+                <div className="flex justify-between items-center border-b border-white/5 pb-4">
+                  <div className="flex items-center gap-3">
+                    <span className="w-2 h-2 rounded-full bg-aura-lime animate-ping" />
+                    <h3 className="text-sm font-black uppercase tracking-wider">
+                      Tier Key: <span className="font-mono text-aura-lime font-bold">{plan.id}</span>
+                    </h3>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="text-[9px] font-black uppercase tracking-widest text-aura-muted font-bold">Active Status</label>
+                    <button 
+                      onClick={() => handleChangeField(plan.id, 'active_status', plan.active_status === false ? true : false)}
+                      className={cn(
+                        "px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all select-none border",
+                        plan.active_status !== false 
+                          ? "bg-aura-lime/10 border-aura-lime/30 text-aura-lime" 
+                          : "bg-white/5 border-white/10 text-aura-muted"
+                      )}
+                    >
+                      {plan.active_status !== false ? "Enabled" : "Disabled"}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                  <div className="lg:col-span-8 grid grid-cols-1 sm:grid-cols-2 gap-5">
+                    <div>
+                      <label className="text-[10px] font-black uppercase tracking-widest text-aura-muted mb-1.5 block">Tier Name</label>
+                      <input 
+                        type="text"
+                        value={plan.name || ''}
+                        onChange={(e) => handleChangeField(plan.id, 'name', e.target.value)}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-xs font-black text-white outline-none focus:border-aura-lime focus:bg-white/10 transition-all font-sans"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-black uppercase tracking-widest text-aura-muted mb-1.5 block">Daily Yield % (e.g., 2.5)</label>
+                      <input 
+                        type="number"
+                        step="0.1"
+                        value={plan.roiPercent || ''}
+                        onChange={(e) => handleChangeField(plan.id, 'roiPercent', e.target.value)}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-xs font-mono text-white outline-none focus:border-aura-lime focus:bg-white/10 transition-all font-bold"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-black uppercase tracking-widest text-aura-muted mb-1.5 block">Minimum Deposit ($)</label>
+                      <input 
+                        type="number"
+                        value={plan.minStr || ''}
+                        onChange={(e) => handleChangeField(plan.id, 'minStr', e.target.value)}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-xs font-mono text-white outline-none focus:border-aura-lime focus:bg-white/10 transition-all font-bold"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-black uppercase tracking-widest text-aura-muted mb-1.5 block">Maximum Deposit ($)</label>
+                      <input 
+                        type="number"
+                        value={plan.maxStr || ''}
+                        onChange={(e) => handleChangeField(plan.id, 'maxStr', e.target.value)}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-xs font-mono text-white outline-none focus:border-aura-lime focus:bg-white/10 transition-all font-bold"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-black uppercase tracking-widest text-aura-muted mb-1.5 block">Duration Days (Cycles)</label>
+                      <input 
+                        type="number"
+                        value={plan.durationStr || ''}
+                        onChange={(e) => handleChangeField(plan.id, 'durationStr', e.target.value)}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-xs font-mono text-white outline-none focus:border-aura-lime focus:bg-white/10 transition-all font-bold"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-black uppercase tracking-widest text-aura-muted mb-1.5 block">Minimum Withdrawal Limit ($)</label>
+                      <input 
+                        type="number"
+                        value={plan.minWithdrawalStr || ''}
+                        onChange={(e) => handleChangeField(plan.id, 'minWithdrawalStr', e.target.value)}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-xs font-mono text-white outline-none focus:border-aura-lime focus:bg-white/10 transition-all font-bold"
+                      />
+                    </div>
+
+                    <div className="sm:col-span-2">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-aura-muted mb-1.5 block">Descriptive Bio</label>
+                      <input 
+                        type="text"
+                        value={plan.description || ''}
+                        onChange={(e) => handleChangeField(plan.id, 'description', e.target.value)}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-xs font-sans text-white outline-none focus:border-aura-lime focus:bg-white/10 transition-all font-semibold"
+                      />
+                    </div>
+
+                    <div className="sm:col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-4 border-t border-white/5 pt-4 mt-2">
+                      <div>
+                        <label className="text-[10px] font-black uppercase tracking-widest text-aura-muted mb-1.5 block">Card Background CSS/Hex</label>
+                        <div className="flex gap-2">
+                          <input 
+                            type="text"
+                            placeholder="e.g., #0b0f19"
+                            value={plan.card_background || ''}
+                            onChange={(e) => handleChangeField(plan.id, 'card_background', e.target.value)}
+                            className="flex-1 bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-[11px] font-mono text-white outline-none focus:border-aura-lime focus:bg-white/10 transition-all font-bold"
+                          />
+                          <div 
+                            className="w-8 h-8 rounded-lg border border-white/10 flex-shrink-0"
+                            style={{ backgroundColor: plan.card_background || '#000000' }}
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] font-black uppercase tracking-widest text-aura-muted mb-1.5 block">Card Border CSS/Hex</label>
+                        <div className="flex gap-2">
+                          <input 
+                            type="text"
+                            placeholder="e.g., #1e293b"
+                            value={plan.card_border || ''}
+                            onChange={(e) => handleChangeField(plan.id, 'card_border', e.target.value)}
+                            className="flex-1 bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-[11px] font-mono text-white outline-none focus:border-aura-lime focus:bg-white/10 transition-all font-bold"
+                          />
+                          <div 
+                            className="w-8 h-8 rounded-lg border border-white/10 flex-shrink-0"
+                            style={{ backgroundColor: plan.card_border || '#000000' }}
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] font-black uppercase tracking-widest text-aura-muted mb-1.5 block">Aura Glow Color Hex</label>
+                        <div className="flex gap-2">
+                          <input 
+                            type="text"
+                            placeholder="e.g., #3b82f6"
+                            value={plan.accent_color || ''}
+                            onChange={(e) => handleChangeField(plan.id, 'accent_color', e.target.value)}
+                            className="flex-1 bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-[11px] font-mono text-white outline-none focus:border-aura-lime focus:bg-white/10 transition-all font-bold"
+                          />
+                          <div 
+                            className="w-8 h-8 rounded-lg border border-white/10 flex-shrink-0"
+                            style={{ backgroundColor: plan.accent_color || '#000000' }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="lg:col-span-4 flex flex-col justify-between bg-black/40 border border-white/[0.03] rounded-3xl p-5 relative overflow-hidden">
+                    <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br opacity-5 blur-xl -z-0" style={{ background: plan.accent_color || '#3b82f6' }} />
+                    
+                    <div className="z-10 space-y-4">
+                      <div>
+                        <span className="text-[7px] font-black uppercase tracking-[0.2em] px-2 py-0.5 bg-white/10 text-white rounded-full font-bold">
+                          Live UI Preview Aura
+                        </span>
+                        <p className="text-[8px] text-aura-muted mt-1 uppercase tracking-wider font-semibold">Simulates user card rendering parameters.</p>
+                      </div>
+
+                      <div 
+                        className={cn(
+                          "border rounded-3xl flex flex-col p-5 shadow-lg transition-all duration-300 relative overflow-hidden min-h-[220px] max-w-[240px] mx-auto",
+                          !plan.card_border && "border-white/5",
+                          !plan.card_background && "bg-[#090b10]"
+                        )}
+                        style={customCardStyle}
+                      >
+                        <div className="relative z-10 flex-1 flex flex-col justify-between">
+                          <div className="flex items-center justify-between mb-3">
+                            <h4 className="text-base font-black italic font-serif" style={plan.accent_color ? { color: plan.accent_color } : { color: '#ffffff' }}>
+                              {plan.name || 'Tier Name'}
+                            </h4>
+                            <div 
+                              className="inline-flex items-center justify-center p-1.5 rounded-lg"
+                              style={{ backgroundColor: `${plan.accent_color || '#fff'}22`, border: `1px solid ${plan.accent_color || '#fff'}33` }}
+                            >
+                              <Zap size={10} className="text-white" />
+                            </div>
+                          </div>
+
+                          <div className="border-t border-white/5 pt-2.5 my-2">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[6px] font-black text-aura-muted uppercase tracking-widest font-bold">Daily Yield</span>
+                              <span className="text-lg font-black italic font-serif font-bold" style={plan.accent_color ? { color: plan.accent_color } : { color: '#ffffff' }}>
+                                {plan.roiPercent || '0.0'}%
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="space-y-2 mb-4">
+                            <div className="flex items-center gap-1.5 p-1.5 rounded-lg border border-white/5 bg-white/5 text-[8px] font-bold text-white uppercase tracking-wider">
+                              <CreditCard size={8} />
+                              {formatCurrency(parseFloat(plan.minStr || '0'))} - {formatCurrency(parseFloat(plan.maxStr || '0'))}
+                            </div>
+                          </div>
+
+                          <button 
+                            disabled 
+                            className="w-full py-2 rounded-lg text-white font-black text-[7px] uppercase tracking-widest opacity-60 pointer-events-none font-bold"
+                            style={{ backgroundColor: plan.accent_color || '#22c55e' }}
+                          >
+                            Initialize Node
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-6">
+                      <button 
+                        disabled={loadingId !== null}
+                        onClick={() => handleSavePlan(plan.id)}
+                        className="w-full py-3 bg-aura-lime hover:bg-opacity-80 active:scale-[0.98] text-black font-black text-[9px] uppercase tracking-[0.2em] transition-all rounded-xl shadow-lg flex items-center justify-center gap-2 font-bold"
+                      >
+                        {loadingId === plan.id ? (
+                          <RefreshCw size={12} className="animate-spin" />
+                        ) : (
+                          <ShieldCheck size={12} />
+                        )}
+                        Save {plan.name || 'Tier'} Configurations
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

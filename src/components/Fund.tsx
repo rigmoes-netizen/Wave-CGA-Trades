@@ -43,6 +43,7 @@ import { toast } from 'sonner';
 
 import SuccessModal from './SuccessModal';
 import PinProtocolModal from './PinProtocolModal';
+import { TransactionTicket } from './TransactionTicket';
 
 // --- BANK SELECTOR MODAL ---
 const NIGERIAN_BANKS = [
@@ -137,7 +138,6 @@ function BankSelectorModal({
                   )}>
                     {bank}
                   </span>
-                  <span className="text-[8px] font-medium text-aura-muted uppercase tracking-[0.1em] mt-0.5">Nigeria Commercial Institution</span>
                 </div>
                 {selectedBank === bank && (
                   <Check size={14} className="text-aura-lime" />
@@ -324,7 +324,9 @@ export default function Fund() {
     const unsubscribeTx = onSnapshot(
       query(collection(db, 'transactions'), where('user_id', '==', user.uid), orderBy('created_at', 'desc')),
       (snap) => {
-        currentTransfers = snap.docs.map(doc => ({ id: doc.id, type: 'transfer', ...doc.data() }));
+        currentTransfers = snap.docs
+          .map(doc => ({ id: doc.id, type: 'transfer', ...doc.data() }))
+          .filter(t => t.type !== 'withdrawal' && t.type !== 'deposit' && t.type !== 'investment');
         updateCombined();
       }
     );
@@ -436,16 +438,6 @@ export default function Fund() {
         created_at: new Date().toISOString(),
       };
 
-      const newTransaction = {
-        user_id: user.uid,
-        type: 'withdrawal',
-        amount: -deductionAmount,
-        fee,
-        description: `Withdrawal request (${withdrawMethod.toUpperCase()})`,
-        status: 'pending',
-        created_at: new Date().toISOString(),
-      };
-
       const newNotification = {
         user_id: user.uid,
         type: 'info',
@@ -461,7 +453,6 @@ export default function Fund() {
       
       const userRef = doc(db, 'users', user.uid);
       const witRef = doc(collection(db, 'withdrawals'));
-      const txRef = doc(collection(db, 'transactions'));
       const notifRef = doc(collection(db, 'notifications'));
 
       // 1. Update user methods + balance
@@ -481,10 +472,7 @@ export default function Fund() {
       // 2. Create withdrawal record
       batch.set(witRef, newWithdrawal);
 
-      // 3. Create transaction log
-      batch.set(txRef, newTransaction);
-
-      // 4. Create notification
+      // 3. Create notification
       batch.set(notifRef, newNotification);
 
       await batch.commit();
@@ -732,10 +720,17 @@ export default function Fund() {
                 onChange={(e) => setWithdrawAmount(e.target.value.replace(/[^0-9.]/g, ''))}
                 placeholder="0.00"
                 className={cn(
-                  "w-full bg-white/5 border rounded-2xl py-6 pl-12 pr-6 text-base md:text-2xl font-bold outline-none transition-all text-white",
+                  "w-full bg-white/5 border rounded-2xl py-6 pl-12 pr-20 text-base md:text-2xl font-bold outline-none transition-all text-white",
                   (isInsufficient || isBelowMin || isFrozen) ? "border-red-500 text-red-500 focus:bg-red-500/5 shadow-[0_0_20px_rgba(239,68,68,0.1)]" : "border-white/10 focus:border-red-400"
                 )}
               />
+              <button 
+                type="button"
+                onClick={() => setWithdrawAmount(available_balance.toString())}
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-black uppercase text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 rounded-lg hover:bg-emerald-500/20 transition-all font-mono"
+              >
+                Max
+              </button>
             </div>
             <div className="flex justify-between items-center px-4">
                <p className="text-[9px] font-bold text-aura-muted uppercase tracking-widest italic outline-none">Withdrawal Fee: 20%</p>
@@ -851,7 +846,7 @@ export default function Fund() {
                     inputMode="numeric"
                     pattern="[0-9]*"
                     value={bankDetails.accNum} 
-                    onChange={e => setBankDetails({...bankDetails, accNum: e.target.value})} 
+                    onChange={e => setBankDetails({...bankDetails, accNum: e.target.value.replace(/[^0-9]/g, '')})} 
                     className="w-full bg-white/5 border border-red-500/10 rounded-xl px-5 py-4 text-base md:text-sm outline-none focus:border-red-400" 
                   />
                 </div>
@@ -975,7 +970,7 @@ export default function Fund() {
           {(tab === 'transactions' || !tab) && (
             <div className="max-w-4xl mx-auto space-y-6">
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 px-2">
-                <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-aura-muted">Transmission History</h3>
+                <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-aura-muted">Transaction History</h3>
                 
                 <div className="flex flex-wrap gap-2">
                   <div className="flex bg-[#11141b] p-1 rounded-lg border border-white/5">
@@ -989,21 +984,6 @@ export default function Fund() {
                         )}
                       >
                         {t}
-                      </button>
-                    ))}
-                  </div>
-
-                  <div className="flex bg-[#11141b] p-1 rounded-lg border border-white/5">
-                    {['all', 'pending', 'approved', 'declined'].map((s) => (
-                      <button
-                        key={s}
-                        onClick={() => setFilterStatus(s)}
-                        className={cn(
-                          "px-3 py-1 rounded-md text-[7px] font-black uppercase tracking-widest transition-all",
-                          filterStatus === s ? "bg-aura-lime text-aura-black" : "text-aura-muted hover:text-white"
-                        )}
-                      >
-                        {s}
                       </button>
                     ))}
                   </div>
@@ -1026,45 +1006,14 @@ export default function Fund() {
                   )}
                 </div>
               ) : (
-                <div className="grid gap-3">
+                <div className="grid gap-3" id="fund-tx-grid">
                   {filteredTransactions.map((tx, idx) => (
-                    <div key={`${tx.type}-${tx.id}-${idx}`} className="bg-[#11141b] border border-white/5 p-5 rounded-2xl flex items-center justify-between hover:border-white/10 transition-all">
-                      <div className="flex items-center gap-4">
-                        <div className={cn(
-                          "w-10 h-10 rounded-xl flex items-center justify-center",
-                          tx.type === 'deposit' ? "bg-aura-lime/10 text-aura-lime" : 
-                          tx.type === 'withdrawal' ? "bg-red-400/10 text-red-400" :
-                          tx.type === 'transfer' ? "bg-blue-400/10 text-blue-400" :
-                          "bg-blue-400/10 text-blue-400"
-                        )}>
-                          {tx.type === 'deposit' ? <PlusCircle size={20} /> : 
-                           tx.type === 'withdrawal' ? <MinusCircle size={20} /> : 
-                           tx.type === 'transfer' ? <RefreshCw size={20} /> :
-                           <Zap size={20} />}
-                        </div>
-                        <div>
-                          <p className="text-xs font-black uppercase text-white tracking-wide">
-                            {tx.type === 'transfer' ? (
-                              tx.type_detail === 'internal_transfer' ? 'Internal Transfer' :
-                              tx.sender_id === user?.uid ? 'Transfer Sent' : 'Transfer Received'
-                            ) : tx.type}
-                          </p>
-                          <p className="text-[9px] text-aura-muted font-bold uppercase tracking-tight">{new Date(tx.created_at).toLocaleString()}</p>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <p className={cn("text-lg font-black tracking-tight text-white mb-1 italic font-serif")}>
-                          {tx.type === 'withdrawal' ? '-' : '+'}{formatCurrency(tx.amount)}
-                        </p>
-                        <div className={cn(
-                          "inline-block px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest",
-                          tx.status === 'approved' || tx.status === 'active' || tx.status === 'inactive' ? "bg-aura-lime/20 text-aura-lime" : 
-                          tx.status === 'declined' ? "bg-red-400/20 text-red-400" : "bg-yellow-400/20 text-yellow-400"
-                        )}>
-                          {tx.status}
-                        </div>
-                      </div>
-                    </div>
+                    <TransactionTicket 
+                      key={`${tx.type}-${tx.id}-${idx}`}
+                      tx={tx}
+                      currentUserId={user?.uid ?? undefined}
+                      variant="fund"
+                    />
                   ))}
                 </div>
               )}

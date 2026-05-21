@@ -22,6 +22,7 @@ import { toast } from 'sonner';
 import TopInvestorsSection from './TopInvestorsSection';
 import WhyChooseSection from './WhyChooseSection';
 import { ROIEngineStats } from './ROIEngineDisplay';
+import LiveActivityNotification from './LiveActivityNotification';
 
 const MemoizedTopInvestorsSection = React.memo(TopInvestorsSection);
 const MemoizedWhyChooseSection = React.memo(WhyChooseSection);
@@ -59,8 +60,16 @@ export default function Homepage() {
   const activeCount = investments.filter(i => i.status === 'active').length;
 
   return (
-    <div className="w-full flex flex-col items-center pt-8 px-3 lg:px-0 space-y-4 lg:space-y-10">
-      {/* --- DASHBOARD GRID --- */}
+    <div className="w-full flex flex-col items-center -mt-8 px-3 lg:px-0">
+      
+      {/* Live Social Proof Activity Feed */}
+      <div className="py-5 lg:py-7 w-full flex justify-center">
+        <LiveActivityNotification />
+      </div>
+
+      {/* Main Content Sections wrapped to maintain spacing */}
+      <div className="w-full flex flex-col items-center space-y-4 lg:space-y-10">
+        {/* --- DASHBOARD GRID --- */}
       <div className="w-full max-w-5xl mx-auto grid grid-cols-2 lg:grid-cols-4 gap-2 lg:gap-6 scale-[0.98] lg:scale-100 origin-top">
         
         {/* CARD 1: FUNDING */}
@@ -151,6 +160,7 @@ export default function Homepage() {
       </div>
       <MemoizedTopInvestorsSection />
       <MemoizedWhyChooseSection />
+      </div>
     </div>
   );
 }

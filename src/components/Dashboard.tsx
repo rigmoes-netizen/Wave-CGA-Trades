@@ -31,6 +31,7 @@ import { db } from '../lib/firebase';
 import { toast } from 'sonner';
 import { AnimatePresence } from 'motion/react';
 import TransferModal from './TransferModal';
+import { TransactionTicket } from './TransactionTicket';
 import { useUI } from '../contexts/UIContext';
 import { ROIEngineStats } from './ROIEngineDisplay';
 import { DynamicBalance } from './DynamicBalance';
@@ -158,7 +159,9 @@ export default function Dashboard() {
     const unsubTransfers = onSnapshot(
       query(collection(db, 'transactions'), where('user_id', '==', user.uid), orderBy('created_at', 'desc'), limit(5)),
       (snap) => {
-        currentTransfers = snap.docs.map(doc => ({ id: doc.id, type: 'transfer', ...doc.data() }));
+        currentTransfers = snap.docs
+          .map(doc => ({ id: doc.id, type: 'transfer', ...doc.data() }))
+          .filter(t => t.type !== 'withdrawal' && t.type !== 'deposit' && t.type !== 'investment');
         updateCombined();
       },
       (error) => console.warn("Transfers listener blocked:", error.message)
@@ -505,52 +508,14 @@ export default function Dashboard() {
                   No transactions yet.
                 </div>
               ) : (
-                <div className="divide-y divide-white/[0.03]">
+                <div className="grid gap-2 p-2" id="dashboard-recent-tx-grid">
                   {recentTx.map((tx, idx) => (
-                    <div key={`${tx.type}-${tx.id}-${idx}`} className="p-8 flex items-center justify-between group hover:bg-white/[0.01] transition-all">
-                      <div className="flex items-center gap-6">
-                        <div className={cn(
-                          "w-12 h-12 rounded-2xl bg-white/5 flex items-center justify-center transition-colors",
-                          tx.type === 'deposit' ? "text-primary group-hover:bg-primary/10" : 
-                          tx.type === 'withdrawal' ? "text-red-400 group-hover:bg-red-400/10" : 
-                          tx.type === 'transfer' ? "text-secondary group-hover:bg-secondary/10" :
-                          "text-secondary group-hover:bg-secondary/10"
-                        )}>
-                          {tx.type === 'deposit' ? <ArrowUpRight size={20} /> : 
-                           tx.type === 'withdrawal' ? <ArrowDownLeft size={20} /> : 
-                           tx.type === 'transfer' ? <RefreshCw size={20} /> : <Zap size={20} />}
-                        </div>
-                        <div>
-                          <p className="text-sm font-bold tracking-tight text-white uppercase">
-                            {tx.type === 'deposit' ? 'Capital Deposit' : 
-                             tx.type === 'withdrawal' ? 'Liquidity Withdrawal' : 
-                             tx.type === 'transfer' ? (
-                               tx.type_detail === 'internal_transfer' ? 'Internal Transfer' :
-                               tx.sender_id === user.uid ? 'Transfer Sent' : 'Transfer Received'
-                             ) :
-                             `${tx.plan_name} Node Injection`}
-                          </p>
-                          <p className="text-[9px] text-aura-muted font-bold uppercase tracking-widest">
-                            {tx.method || tx.plan_name} • {new Date(tx.created_at).toLocaleString()}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                         <p className={cn(
-                           "text-lg font-black tracking-tight",
-                           tx.type === 'deposit' ? "text-emerald-500" : 
-                           tx.type === 'withdrawal' ? "text-red-400" : "text-white"
-                         )}>
-                           {tx.type === 'withdrawal' ? '-' : '+'}{formatCurrency(tx.amount)}
-                         </p>
-                         <p className={cn(
-                           "text-[9px] font-black uppercase tracking-widest",
-                           tx.status === 'approved' || tx.status === 'active' ? "text-emerald-500" : 
-                           tx.status === 'declined' || tx.status === 'terminated' ? "text-red-500" : 
-                           "text-yellow-500"
-                         )}>{tx.status}</p>
-                      </div>
-                    </div>
+                    <TransactionTicket 
+                      key={`${tx.type}-${tx.id}-${idx}`}
+                      tx={tx}
+                      currentUserId={user?.uid ?? undefined}
+                      variant="dashboard"
+                    />
                   ))}
                 </div>
               )}

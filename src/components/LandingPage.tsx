@@ -505,7 +505,7 @@ export default function LandingPage() {
       {/* Nav */}
       <nav className={cn(
         "fixed top-0 inset-x-0 z-[100] transition-all duration-500 flex items-center justify-between px-6 lg:px-20 backdrop-blur-md border-b",
-        isScrolled ? "h-14 bg-aura-black/80 border-white/10" : "h-20 lg:h-24 bg-transparent border-transparent"
+        isScrolled ? "h-14 bg-aura-black/80 border-primary/20" : "h-20 lg:h-24 bg-transparent border-transparent"
       )}>
         <div className={cn("flex items-center gap-4 transition-all duration-500", isScrolled ? "scale-90" : "scale-100")}>
           <img src="https://i.imgur.com/wU33xy3.png" alt="Wave Logo" className="h-11 w-auto lg:h-14 object-contain" />

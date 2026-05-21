@@ -252,7 +252,7 @@ export default function ReviewsPage() {
       {/* Premium Navbar */}
       <nav className={cn(
         "fixed top-0 inset-x-0 z-[100] transition-all duration-500 h-20 px-6 lg:px-20 flex items-center justify-between backdrop-blur-md border-b",
-        isScrolled ? "bg-[#050816]/90 border-white/10 h-16" : "bg-transparent border-transparent"
+        isScrolled ? "bg-[#050816]/90 border-primary/20 h-16" : "bg-transparent border-transparent"
       )}>
         <div className="flex items-center gap-3 cursor-pointer" onClick={() => navigate('/welcome')}>
           <img src="https://i.imgur.com/wU33xy3.png" alt="Logo" className="w-10 h-10 lg:w-12 lg:h-12 object-contain" />

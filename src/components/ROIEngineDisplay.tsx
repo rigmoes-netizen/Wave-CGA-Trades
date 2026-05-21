@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { motion } from 'motion/react';
 import { Bot, Zap, Clock } from 'lucide-react';
 import { formatCurrency, cn } from '../lib/utils';
+import { useAuth, getRoiByAmountDynamic } from '../contexts/AuthContext';
 import { DynamicBalance } from './DynamicBalance';
 import { CandlestickChart, TradingActivity } from './ROIEngineVisuals';
 
@@ -13,6 +14,7 @@ interface ROIEngineStatsProps {
 }
 
 export const ROIEngineStats = React.memo(({ investments, profile, user, variant = 'home' }: ROIEngineStatsProps) => {
+  const { plans } = useAuth();
   const [progress, setProgress] = useState(0);
   const [timeLeft, setTimeLeft] = useState("24:00:00");
   const [liveEarnings, setLiveEarnings] = useState(0);
@@ -20,8 +22,8 @@ export const ROIEngineStats = React.memo(({ investments, profile, user, variant 
   const activeInvestments = useMemo(() => investments.filter(i => i.status === 'active'), [investments]);
   const activeCount = activeInvestments.length;
   const yieldSum = useMemo(() => 
-    activeInvestments.reduce((acc, curr: any) => acc + (curr.amount * (curr.dailyRoi || 0)), 0),
-  [activeInvestments]);
+    activeInvestments.reduce((acc, curr: any) => acc + (curr.amount * getRoiByAmountDynamic(curr.amount, plans || [])), 0),
+  [activeInvestments, plans]);
 
   useEffect(() => {
     if (!user || !profile || activeCount === 0 || !profile.roi_cycle_start) {

@@ -170,7 +170,7 @@ export default function TopInvestorsPage() {
         <div className="absolute bottom-[-10%] right-[-10%] w-[60%] h-[60%] bg-secondary/5 blur-[160px] rounded-full" />
       </div>
 
-      <nav className="fixed top-0 inset-x-0 h-20 md:h-24 z-50 flex items-center justify-between px-6 md:px-12 backdrop-blur-md border-b border-white/5">
+      <nav className="fixed top-0 inset-x-0 h-20 md:h-24 z-50 flex items-center justify-between px-6 md:px-12 backdrop-blur-md border-b border-primary/20">
         <button 
           onClick={() => navigate(-1)}
           className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.3em] text-aura-muted hover:text-white transition-all group"

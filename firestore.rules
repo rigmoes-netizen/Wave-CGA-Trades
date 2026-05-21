@@ -25,14 +25,22 @@ service cloud.firestore {
         request.auth.token.email == 'support@tavariwave.network' ||
         request.auth.token.email == 'contact.cga.usa@gmail.com' ||
         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', 'user') == 'cipher')
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role') == 'cipher')
       );
+    }
+
+    function isSuspended(data) {
+      return 'suspended' in data && data.suspended == true;
+    }
+
+    function isBanned(data) {
+      return 'banned' in data && data.banned == true;
     }
 
     function isStatusActive(uid) {
       return exists(/databases/$(database)/documents/users/$(uid)) && 
-             get(/databases/$(database)/documents/users/$(uid)).data.get('suspended', false) == false && 
-             get(/databases/$(database)/documents/users/$(uid)).data.get('banned', false) == false;
+             !isSuspended(get(/databases/$(database)/documents/users/$(uid)).data) && 
+             !isBanned(get(/databases/$(database)/documents/users/$(uid)).data);
     }
 
     // --- VALIDATION HELPERS ---
@@ -40,8 +48,8 @@ service cloud.firestore {
       return data.keys().hasAll(['uid', 'role', 'email']) &&
              data.uid is string &&
              data.role in ['user', 'cipher'] &&
-             (data.get('suspended', false) is bool) &&
-             (data.get('banned', false) is bool);
+             (!('suspended' in data) || data.suspended is bool) &&
+             (!('banned' in data) || data.banned is bool);
     }
 
     function isValidInvestment(data) {
@@ -51,16 +59,30 @@ service cloud.firestore {
              data.plan_name is string;
     }
 
+    function isAdditiveUpdate(field, incoming_data, existing_data) {
+      return !(field in incoming_data) || 
+             !(field in existing_data) || 
+             incoming_data[field] >= existing_data[field];
+    }
+
+    function isSafeIncomingUpdate(incoming_data, existing_data) {
+      return isAdditiveUpdate('funding_balance', incoming_data, existing_data) &&
+             isAdditiveUpdate('available_balance', incoming_data, existing_data) &&
+             isAdditiveUpdate('referral_earnings', incoming_data, existing_data) &&
+             isAdditiveUpdate('active_referrals', incoming_data, existing_data) &&
+             isAdditiveUpdate('referrals_count', incoming_data, existing_data);
+    }
+
     // --- COLLECTIONS ---
 
     match /users/{userId} {
-      allow get: if isSignedIn() && (isOwner(userId) || isCipher() || exists(/databases/$(database)/documents/users/$(request.auth.uid))); 
+      allow get: if isSignedIn(); 
       allow list: if true; // Required for unauthenticated referral code checking during signup
-      allow create: if isOwner(userId) && isSignedIn() && (incoming().role == 'user' || isCipher()); 
+      allow create: if isOwner(userId) && isSignedIn() && (incoming().get('role') == 'user' || isCipher()); 
       allow update: if (isCipher() || 
                        (isOwner(userId) && 
-                        (incoming().get('suspended', false) == false && existing().get('suspended', false) == false) && 
-                        (incoming().get('banned', false) == false && existing().get('banned', false) == false) && 
+                        !isSuspended(incoming()) && !isSuspended(existing()) && 
+                        !isBanned(incoming()) && !isBanned(existing()) && 
                         incoming().diff(existing()).affectedKeys().hasOnly([
                           'name', 'username', 'email', 'phone', 'photoURL', 'transfer_pin', 'transaction_pin', 
                           'push_notifications', 'available_balance', 'funding_balance', 'total_earnings', 
@@ -72,11 +94,7 @@ service cloud.firestore {
                        (isSignedIn() && existing().referred_by == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['last_rebook'])) ||
                        (isSignedIn() && !isOwner(userId) && 
                         incoming().diff(existing()).affectedKeys().hasOnly(['funding_balance', 'available_balance', 'referral_earnings', 'active_referrals', 'referrals_count']) && 
-                        (incoming().get('funding_balance', existing().get('funding_balance', 0)) >= existing().get('funding_balance', 0)) &&
-                        (incoming().get('available_balance', existing().get('available_balance', 0)) >= existing().get('available_balance', 0)) &&
-                        (incoming().get('referral_earnings', existing().get('referral_earnings', 0)) >= existing().get('referral_earnings', 0)) &&
-                        (incoming().get('active_referrals', existing().get('active_referrals', 0)) >= existing().get('active_referrals', 0)) &&
-                        (incoming().get('referrals_count', existing().get('referrals_count', 0)) >= existing().get('referrals_count', 0))
+                        isSafeIncomingUpdate(incoming(), existing())
                        )
                       );
       
@@ -89,7 +107,11 @@ service cloud.firestore {
     match /transactions/{id} {
       allow get: if isSignedIn() && (resource.data.user_id == request.auth.uid || isCipher());
       allow list: if isCipher() || (isSignedIn() && resource.data.user_id == request.auth.uid);
-      allow create: if isSignedIn() && (isCipher() || incoming().user_id == request.auth.uid || incoming().get('sender_id', '') == request.auth.uid);
+      allow create: if isSignedIn() && (
+        isCipher() || 
+        incoming().user_id == request.auth.uid || 
+        ('sender_id' in incoming() && incoming().sender_id == request.auth.uid)
+      );
       allow update, delete: if isCipher();
     }
 
@@ -99,8 +121,9 @@ service cloud.firestore {
       allow create: if isSignedIn() && (
         isCipher() || 
         incoming().user_id == request.auth.uid || 
-        incoming().get('sender_id', '') == request.auth.uid ||
+        ('sender_id' in incoming() && incoming().sender_id == request.auth.uid) ||
         (exists(/databases/$(database)/documents/users/$(incoming().user_id)) && 
+         'referred_by' in get(/databases/$(database)/documents/users/$(incoming().user_id)).data &&
          get(/databases/$(database)/documents/users/$(incoming().user_id)).data.referred_by == request.auth.uid)
       );
       allow update: if isSignedIn() && (resource.data.user_id == request.auth.uid || isCipher());
@@ -135,7 +158,7 @@ service cloud.firestore {
          get(/databases/$(database)/documents/users/$(resource.data.user_id)).data.referred_by == request.auth.uid)
       ));
       allow create: if isSignedIn() && incoming().user_id == request.auth.uid && isValidInvestment(incoming()) && isStatusActive(request.auth.uid);
-      allow update: if isCipher() || (isSignedIn() && resource.data.user_id == request.auth.uid && incoming().user_id == resource.data.user_id && isStatusActive(request.auth.uid) && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'activated_at', 'last_sync', 'total_earned']) && isValidInvestment(incoming()));
+      allow update: if isCipher() || (isSignedIn() && resource.data.user_id == request.auth.uid && incoming().user_id == resource.data.user_id && isStatusActive(request.auth.uid) && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'activated_at', 'last_sync', 'total_earned', 'referral_bonus_processed', 'dailyRoi']) && isValidInvestment(incoming()));
       allow delete: if isCipher();
     }
 
@@ -165,6 +188,11 @@ service cloud.firestore {
     match /users/{userId}/devices/{deviceId} {
       allow read: if isCipher() || isOwner(userId);
       allow write: if isCipher() || isOwner(userId);
+    }
+
+    match /investment_plans/{id} {
+      allow read: if true;
+      allow write: if isCipher();
     }
   }
 }

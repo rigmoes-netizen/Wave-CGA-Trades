@@ -12,7 +12,6 @@ import {
   HelpCircle, 
   User,
   TrendingUp,
-  Search,
   Settings as SettingsIcon,
   ChevronDown,
   Lock,
@@ -317,8 +316,8 @@ export default function Layout() {
         "sticky top-4 z-[100] mx-4 lg:mx-8 flex items-center px-6 backdrop-blur-2xl transition-all duration-500 rounded-[24px] border shadow-[0_8px_32px_rgba(0,0,0,0.4)]",
         isScrolled ? "h-14 py-2 mt-2" : "h-16 lg:h-20 mt-4",
         isDark 
-          ? "bg-white/[0.03] border-white/10 shadow-[inset_0_0_20px_rgba(255,255,255,0.02)]" 
-          : "bg-white/70 border-aura-line",
+          ? "bg-white/[0.03] border-primary/20 shadow-[inset_0_0_20px_rgba(255,255,255,0.02)]" 
+          : "bg-white/70 border-primary/20",
         // Mobile visibility logic
         (location.pathname === '/home' || location.pathname === '/' || isInternalApp) && !isDistractionFree ? "flex" : "hidden lg:flex",
         isDistractionFree && "hidden lg:hidden"
@@ -453,18 +452,6 @@ export default function Layout() {
 
         {/* Right: Actions */}
         <div className="flex items-center justify-end gap-2 md:gap-3">
-          <div className={cn(
-            "hidden md:flex items-center gap-1 mr-2 px-3 py-1.5 rounded-full border",
-            isDark ? "bg-white/5 border-white/5" : "bg-aura-black/5 border-aura-black/5"
-          )}>
-            <Search size={14} className="text-aura-muted" />
-            <input 
-              type="text" 
-              placeholder={t('search_assets')}
-              className="bg-transparent border-none outline-none text-base md:text-[10px] font-medium text-aura-muted tracking-widest w-24 focus:w-40 transition-all placeholder:text-aura-muted/50"
-            />
-          </div>
-
           <button onClick={() => setIsDark(!isDark)} className="p-2 text-aura-muted hover:text-aura-lime transition-colors">
             {isDark ? <Sun size={20} /> : <Moon size={20} />}
           </button>
@@ -686,8 +673,8 @@ export default function Layout() {
       <nav className={cn(
         "lg:hidden fixed bottom-6 left-6 right-6 h-16 z-[100] flex items-center px-4 backdrop-blur-3xl rounded-[28px] border shadow-[0_20px_50px_rgba(0,0,0,0.4)]",
         isDark 
-          ? "bg-white/[0.03] border-white/10 shadow-[inset_0_0_20px_rgba(255,255,255,0.01)]" 
-          : "bg-white/90 border-aura-line",
+          ? "bg-white/[0.03] border-primary/20 shadow-[inset_0_0_20px_rgba(255,255,255,0.01)]" 
+          : "bg-white/90 border-primary/20",
         isDistractionFree && "hidden"
       )}>
         <div className="relative flex w-full items-center justify-between">

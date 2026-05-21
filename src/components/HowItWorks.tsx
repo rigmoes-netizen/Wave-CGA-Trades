@@ -20,42 +20,15 @@ import {
 } from 'lucide-react';
 import { cn, formatCurrency } from '../lib/utils';
 import { Link } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 
-const INVESTMENT_PLANS = [
-  {
-    name: 'Regular',
-    min: 10,
-    max: 40000,
-    roi: 2.5,
-    description: 'Stable entry-level investment plan.',
-    color: 'text-blue-400',
-    borderColor: 'border-blue-500/20',
-    bgColor: 'bg-[#0f172a]',
-    icon: <BarChart3 className="w-6 h-6" />
-  },
-  {
-    name: 'Premium',
-    min: 50000,
-    max: 900000,
-    roi: 2.7,
-    description: 'Advanced plan for high-volume investors.',
-    color: 'text-emerald-400',
-    borderColor: 'border-emerald-500/20',
-    bgColor: 'bg-[#064e3b]/20',
-    icon: <Zap className="w-6 h-6" />
-  },
-  {
-    name: 'Elite',
-    min: 1000000,
-    max: 10000000,
-    roi: 2.9,
-    description: 'Institutional-grade investment plan.',
-    color: 'text-amber-400',
-    borderColor: 'border-amber-500/20',
-    bgColor: 'bg-[#4c1d95]/20',
-    icon: <Cpu className="w-6 h-6" />
-  }
-];
+const PLAN_ICONS: Record<string, React.ReactNode> = {
+  regular: <BarChart3 className="w-6 h-6" />,
+  premium: <Zap className="w-6 h-6" />,
+  elite: <Cpu className="w-6 h-6" />,
+};
+
+const getPlanIcon = (id: string) => PLAN_ICONS[id] || <Cpu className="w-6 h-6" />;
 
 const SectionHeader = ({ title, subtitle, icon: Icon, badge }: { title: string; subtitle: string; icon?: any; badge?: string }) => (
   <div className="space-y-4 mb-16">
@@ -74,6 +47,7 @@ const SectionHeader = ({ title, subtitle, icon: Icon, badge }: { title: string; 
 );
 
 const HowItWorks = () => {
+  const { plans } = useAuth();
   return (
     <div className="min-h-screen bg-[#050608] text-white pt-32 pb-20 px-6 relative overflow-hidden">
       {/* Background Glows */}
@@ -349,7 +323,7 @@ const HowItWorks = () => {
            </div>
 
            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-              {INVESTMENT_PLANS.map((plan, i) => (
+              {(plans || []).filter((p: any) => p.active_status !== false).map((plan: any, i) => (
                 <motion.div
                   key={i}
                   initial={{ opacity: 0, scale: 0.95 }}
@@ -358,16 +332,21 @@ const HowItWorks = () => {
                   transition={{ delay: i * 0.1 }}
                   className={cn(
                     "relative p-10 rounded-[48px] border transition-all group overflow-hidden flex flex-col h-full",
-                    plan.borderColor,
-                    plan.bgColor
+                    !plan.card_border && plan.borderColor,
+                    !plan.card_background && plan.bgColor
                   )}
+                  style={{
+                    backgroundColor: plan.card_background || undefined,
+                    borderColor: plan.card_border || undefined,
+                    boxShadow: plan.accent_color ? `0 10px 40px -10px ${plan.accent_color}66` : undefined
+                  }}
                 >
                    <div className="absolute top-0 right-0 w-40 h-40 bg-gradient-to-br from-white/10 to-transparent opacity-10 blur-2xl" />
                    
                    <div className="mb-8 flex items-center justify-between">
-                      <h4 className={cn("text-3xl font-black italic tracking-tighter uppercase font-serif", plan.color)}>{plan.name}</h4>
+                      <h4 className={cn("text-3xl font-black italic tracking-tighter uppercase font-serif", !plan.accent_color && plan.color)} style={plan.accent_color ? { color: plan.accent_color } : {}}>{plan.name}</h4>
                       <div className="w-12 h-12 bg-white/5 rounded-2xl flex items-center justify-center text-white border border-white/10">
-                         {plan.icon}
+                         {getPlanIcon(plan.id)}
                       </div>
                    </div>
 
@@ -376,7 +355,7 @@ const HowItWorks = () => {
                    <div className="space-y-6 mb-10">
                       <div className="flex items-center justify-between border-b border-white/5 pb-4">
                          <span className="text-[10px] font-black uppercase tracking-widest text-aura-muted">Daily Yield</span>
-                         <span className={cn("text-2xl font-black italic font-serif", plan.color)}>{plan.roi}%</span>
+                         <span className={cn("text-2xl font-black italic font-serif", !plan.accent_color && plan.color)} style={plan.accent_color ? { color: plan.accent_color } : {}}>{(plan.roi * 100).toFixed(1)}%</span>
                       </div>
                       <div className="flex items-center justify-between border-b border-white/5 pb-4">
                          <span className="text-[10px] font-black uppercase tracking-widest text-aura-muted">Minimum</span>
