@@ -26,6 +26,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { useAuth } from '../contexts/AuthContext';
+import { useUIConfig } from '../contexts/UIConfigContext';
 import { db, auth } from '../lib/firebase';
 import { 
   collection, 
@@ -217,6 +218,7 @@ function BankSelectorModal({
 
 export default function Rewards() {
   const { user, profile } = useAuth();
+  const { config: uiConfig } = useUIConfig();
 
   // Component States
   const [activeInvestments, setActiveInvestments] = useState<Investment[]>([]);
@@ -248,7 +250,7 @@ export default function Rewards() {
   const daysInMonth = new Date(currentYear, currentMonthNum + 1, 0).getDate();
   const monthName = now.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
   const todayDayNum = now.getDate();
-  const todayStr = now.toISOString().split('T')[0]; // YYYY-MM-DD
+  const todayStr = [now.getFullYear(), String(now.getMonth() + 1).padStart(2, '0'), String(now.getDate()).padStart(2, '0')].join('-'); // LOCAL YYYY-MM-DD
 
   // Active user parameters with fallbacks
   const points_balance = profile?.withdraw_methods?.points_balance ?? profile?.points_balance ?? 0;
@@ -313,21 +315,16 @@ export default function Rewards() {
     return () => unsubscribe();
   }, [user]);
 
-  // 2. Countdown handler for daily check-in (24 hour lock)
+  // 2. Countdown handler for daily check-in (counts down to next global 12:00 AM midnight)
   useEffect(() => {
-    if (!last_check_in) {
-      setCountdownStr('');
-      return;
-    }
-
     const timer = setInterval(() => {
-      const lastTime = new Date(last_check_in).getTime();
-      const nextTime = lastTime + 24 * 60 * 60 * 1000;
-      const remains = nextTime - new Date().getTime();
+      const nowTime = new Date();
+      const nextMidnight = new Date();
+      nextMidnight.setHours(24, 0, 0, 0); // Next 12:00 AM midnight
+      const remains = nextMidnight.getTime() - nowTime.getTime();
 
       if (remains <= 0) {
         setCountdownStr('');
-        clearInterval(timer);
       } else {
         const hrs = Math.floor(remains / (60 * 60 * 1000));
         const mins = Math.floor((remains % (60 * 60 * 1000)) / (60 * 1000));
@@ -337,16 +334,14 @@ export default function Rewards() {
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [last_check_in]);
+  }, []);
 
   // Reference for sliding calendar timeline container
   const calendarContainerRef = useRef<HTMLDivElement>(null);
 
-  // Check if can claim daily check-in
+  // Check if can claim daily check-in (resets immediately at 12:00 AM midnight)
   const hasClaimedToday = claimedDatesSet.has(todayStr);
-  const lastCheckInTime = last_check_in ? new Date(last_check_in).getTime() : 0;
-  const is24hPassed = new Date().getTime() - lastCheckInTime >= 24 * 60 * 60 * 1000;
-  const isDailyClaimable = !hasClaimedToday && (last_check_in ? is24hPassed : true);
+  const isDailyClaimable = !hasClaimedToday;
 
   // Generate the sliding timeline of check-in days in chronological order
   const daysList = useMemo(() => {
@@ -468,18 +463,22 @@ export default function Rewards() {
           throw new Error("Safety protocol triggered: Attestation already signed for this cycle.");
         }
 
-        // Check 24-hour cycle lock
-        const lastCheckInTimeInTx = lastCheckIn ? new Date(lastCheckIn).getTime() : 0;
-        if (lastCheckIn && (new Date().getTime() - lastCheckInTimeInTx < 24 * 60 * 60 * 1000)) {
-          throw new Error("You are currently on a 24-hour claim cycle lock.");
-        }
+        // Compute yesterday's date string in user's local timezone style
+        const yesterdayDate = new Date();
+        yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+        const yStr = [yesterdayDate.getFullYear(), String(yesterdayDate.getMonth() + 1).padStart(2, '0'), String(yesterdayDate.getDate()).padStart(2, '0')].join('-');
+
+        const lastCheckInDateOnly = lastCheckIn ? lastCheckIn.split('T')[0] : '';
 
         // Calculate new streak
         let newStreak = 1;
         if (lastCheckIn) {
-          const hoursPassed = (new Date().getTime() - lastCheckInTimeInTx) / (1000 * 60 * 60);
-          if (hoursPassed >= 24 && hoursPassed <= 48) {
+          if (lastCheckInDateOnly === yStr) {
             newStreak = currentStreak + 1;
+          } else if (lastCheckInDateOnly === todayStr) {
+            newStreak = currentStreak;
+          } else {
+            newStreak = 1;
           }
         }
 
@@ -836,27 +835,37 @@ export default function Rewards() {
         <div className="absolute bottom-[-10%] right-[-10%] w-[600px] h-[600px] bg-blue-600/5 blur-[150px] rounded-full" />
       </div>
 
-      <div className="max-w-5xl mx-auto w-full relative z-10 pt-6">
+      {/* Edge-to-Edge Premium Header Banner with Image Background */}
+      <div className="-mx-4 lg:-mx-8 -mt-8 mb-8 relative h-[200px] sm:h-[220px] md:h-[250px] overflow-hidden">
+        <img 
+          src={uiConfig?.reward_header_image || "https://images.unsplash.com/photo-1621761191319-c6fb62004040?q=80&w=2000&auto=format&fit=crop"} 
+          alt="Ecosystem Rewards Header" 
+          className="w-full h-full object-cover brightness-[0.70] contrast-[1.05]"
+          referrerPolicy="no-referrer"
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-[#050608] via-transparent to-black/30" />
         
-        {/* Header section with profile overview */}
-        <header className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8 border-b border-[#7C3AED]/10 pb-6">
+        <div className="absolute bottom-6 left-6 right-6 z-10 flex flex-col md:flex-row md:items-end justify-between gap-4 max-w-5xl mx-auto w-full md:px-4">
           <div className="flex items-center gap-4">
-            <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#7C3AED]/20 to-[#A855F7]/10 flex items-center justify-center border border-[#7C3AED]/20 shadow-[0_4px_12px_rgba(124,58,237,0.15)]">
+            <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#7C3AED]/25 to-[#A855F7]/15 flex items-center justify-center border border-[#7C3AED]/30 shadow-[0_4px_12px_rgba(124,58,237,0.15)] backdrop-blur-md">
               <Gift className="text-[#C084FC]" size={22} />
             </div>
             <div>
-              <h1 className="text-2xl font-black text-white tracking-tight italic">Ecosystem Reward</h1>
-              <p className="text-xs text-aura-muted font-medium">Claim, convert, and withdraw your rewards seamlessly.</p>
+              <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight italic drop-shadow-md">Ecosystem Reward</h1>
+              <p className="text-[10px] md:text-xs text-white/85 font-semibold drop-shadow-sm leading-snug mt-1.5">Claim, convert, and withdraw your rewards seamlessly.</p>
             </div>
           </div>
           
           <div className="flex items-center gap-3">
-            <div className="bg-[#11131f] border border-[#7C3AED]/20 px-4 py-2 rounded-full flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span className="text-xs font-black uppercase tracking-widest text-[#C084FC]">verified portal</span>
+            <div className="bg-[#11131f]/80 border border-[#7C3AED]/35 px-4 py-2 rounded-full flex items-center gap-2 backdrop-blur-md shadow-lg">
+              <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="text-[10px] sm:text-xs font-black uppercase tracking-widest text-[#C084FC]">verified portal</span>
             </div>
           </div>
-        </header>
+        </div>
+      </div>
+
+      <div className="max-w-5xl mx-auto w-full relative z-10">
 
         {/* 6. TOP SECTION: REWARD BALANCES & TRACKING STATS */}
         <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-10">

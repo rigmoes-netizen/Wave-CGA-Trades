@@ -546,9 +546,16 @@ export default function CipherAdmin() {
 
         const depositAmountValue = parseFloat(depositData.amount || deposit.amount || 0);
 
-        transaction.update(userRef, { 
-          funding_balance: increment(depositAmountValue)
-        });
+        if (depositData.is_twn_deposit) {
+          const twnCredited = depositData.twn_amount || (depositAmountValue * 50);
+          transaction.update(userRef, { 
+            twn_balance: increment(twnCredited)
+          });
+        } else {
+          transaction.update(userRef, { 
+            funding_balance: increment(depositAmountValue)
+          });
+        }
 
         transaction.update(depositRef, { 
           status: 'approved', 
@@ -556,7 +563,7 @@ export default function CipherAdmin() {
         });
       });
 
-      toast.success("Deposit Approved & Credited to Funding Wallet");
+      toast.success("Deposit Approved & Balance Credited");
     } catch (error) {
       console.error("DEBUG [TRANSACTION ERROR]:", error);
       toast.error("Process failed: " + (error instanceof Error ? error.message : String(error)));

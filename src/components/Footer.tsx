@@ -94,7 +94,8 @@ const Footer = () => {
                 <Mail size={16} className="text-primary" />
                 <div className="space-y-1">
                   <p className="text-[8px] font-black text-aura-muted uppercase tracking-widest">Global Inquiries</p>
-                  <p className="text-xs text-white font-mono lowercase">support@tavariwave.network</p>
+                  <p className="text-xs text-white font-mono lowercase">tavariwavenetwork@support.com</p>
+                  <p className="text-[10px] text-white/40 font-mono lowercase">tavariwavenetwork@gmail.com</p>
                 </div>
               </div>
               <div className="flex items-center gap-3 p-4 bg-white/5 border border-white/10 rounded-xl">

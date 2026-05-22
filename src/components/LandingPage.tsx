@@ -200,69 +200,57 @@ export default function LandingPage() {
     e.preventDefault();
     setLoading(true);
     try {
-      // STEP 1: Authenticate user
+      // STEP 1: Authenticate user in Firebase Auth
       const userCredential = await signInWithEmailAndPassword(auth, signinEmail, signinPassword);
       let firebaseUser = userCredential.user;
 
-      // STEP 2: Device Security Check
-      const deviceId = getDeviceFingerprint();
-      const deviceStatus = await checkDeviceStatus(firebaseUser.uid, deviceId);
-      
+      // STEP 2: Reload auth state and check email verification first
+      await firebaseUser.reload();
+      firebaseUser = auth.currentUser || firebaseUser;
+
       const isCipherUser = firebaseUser.email === 'support@tavariwave.network' || 
                        firebaseUser.email === 'contact.cga.usa@gmail.com' || 
                        firebaseUser.uid === '3yV3rfcUzob5v9ltfVcMw0PL6tQ2';
 
-      if (!deviceStatus && !isCipherUser) {
-        // Unknown device - Require OTP
-        const otp = generateOTP();
-        await sendOTP(firebaseUser.email!, otp);
-        setTempUser(firebaseUser);
-        setRequiresOtp(true);
-        setLoading(false);
-        toast.info("New device detected. Verification code sent to email.");
-        await logAudit(firebaseUser.uid, 'mfa_triggered', { deviceId });
-        return;
-      }
-
-      // STEP 3: Reload auth state and verification
-      await firebaseUser.reload();
-      firebaseUser = auth.currentUser || firebaseUser;
-
-      if (!firebaseUser.emailVerified && !isCipherUser) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        await firebaseUser.reload();
-        firebaseUser = auth.currentUser || firebaseUser;
-      }
-
       if (!firebaseUser.emailVerified && !isCipherUser) {
         toast.error("Please verify your email before signing in.");
         await auth.signOut();
+        setLoading(false);
         return;
       }
 
-      // STEP 3: Force token refresh (Crucial for Firestore rules)
+      // Force token refresh so Firestore rules recognize new authentication state
       await firebaseUser.getIdToken(true);
 
-      // STEP 4: Robust Firestore check with background retries
+      // STEP 3: Safe, non-blocking profile retrieval
       let userDoc = null;
-      let attempts = 0;
-      
-      while (attempts < 3) {
-        try {
-          userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
-          break;
-        } catch (err: any) {
-          if (err.message?.includes('permissions')) {
-            console.warn(`Auth sync retry ${attempts + 1}...`);
-            await firebaseUser.getIdToken(true);
-            await new Promise(resolve => setTimeout(resolve, 1000 * (attempts + 1)));
-            attempts++;
-          } else {
-            throw err;
-          }
-        }
+      try {
+        userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+      } catch (err: any) {
+        console.warn("Soft-caught Firestore permission/fetch error in handleSignin:", err);
       }
 
+      // STEP 4: Device Fingerprint & Security Verification
+      const deviceId = getDeviceFingerprint();
+      const trustedDevicesKey = `trusted_devices_${firebaseUser.uid}`;
+      const trustedDevices = JSON.parse(localStorage.getItem(trustedDevicesKey) || '[]');
+      const isNewDevice = !trustedDevices.includes(deviceId);
+
+      // Extract transaction PIN (stored in profile as transfer_pin)
+      const profileData = userDoc?.exists() ? userDoc.data() : null;
+      const userPin = profileData?.transfer_pin;
+
+      if (isNewDevice && userPin && !isCipherUser) {
+        // Unknown device and user has a Transaction PIN -> Prompt for PIN
+        setTempUser(firebaseUser);
+        setRequiresOtp(true); // Reuse verification panel for Enter PIN
+        setLoading(false);
+        toast.info("New device detected. Verification required.");
+        logAudit(firebaseUser.uid, 'mfa_triggered_pin', { deviceId }).catch(() => {});
+        return;
+      }
+
+      // STEP 5: Create user profile if it doesn't exist (first-time login)
       if (!userDoc || !userDoc.exists()) {
         console.log("User document missing. Creating fallback profile...");
         const cachedDataStr = localStorage.getItem(`pending_signup_${firebaseUser.uid}`);
@@ -271,17 +259,20 @@ export default function LandingPage() {
           try { pendingData = JSON.parse(cachedDataStr); } catch (e) {}
         }
         
-        // Referral detection & Validation
         let referrerId: string | null = null;
         let referrerCodeValue: string | null = null;
         
         if (pendingData?.referralCode?.trim()) {
           const cleanRef = pendingData.referralCode.trim().toUpperCase();
           const q = query(collection(db, 'users'), where('referral_code', '==', cleanRef));
-          const querySnapshot = await getDocs(q);
-          if (!querySnapshot.empty) {
-            referrerId = querySnapshot.docs[0].id;
-            referrerCodeValue = cleanRef;
+          try {
+            const querySnapshot = await getDocs(q);
+            if (!querySnapshot.empty) {
+              referrerId = querySnapshot.docs[0].id;
+              referrerCodeValue = cleanRef;
+            }
+          } catch (e) {
+            console.warn("Failed querying referral code silently:", e);
           }
         }
 
@@ -327,33 +318,30 @@ export default function LandingPage() {
           }
         }
 
-        let setDone = false;
-        let setAttempts = 0;
-        while (!setDone && setAttempts < 5) {
-          try {
-            await setDoc(doc(db, 'users', firebaseUser.uid), newUserProfile);
-            setDone = true;
-          } catch (setErr: any) {
-            if (setErr.message?.includes('permissions')) {
-              await firebaseUser.reload();
-              await firebaseUser.getIdToken(true);
-              await new Promise(resolve => setTimeout(resolve, 1000));
-              setAttempts++;
-            } else {
-              throw setErr;
-            }
-          }
+        try {
+          await setDoc(doc(db, 'users', firebaseUser.uid), newUserProfile);
+        } catch (setErr) {
+          console.warn("Grace-failed setting profile on sign-in, AuthContext will auto-heal:", setErr);
         }
         if (cachedDataStr) localStorage.removeItem(`pending_signup_${firebaseUser.uid}`);
       }
 
+      // Register device and store locally as trusted
+      try {
+        if (!trustedDevices.includes(deviceId)) {
+          trustedDevices.push(deviceId);
+          localStorage.setItem(trustedDevicesKey, JSON.stringify(trustedDevices));
+        }
+      } catch (e) {}
+
+      // Register in Firestore silently
+      registerDevice(firebaseUser.uid, deviceId).catch(() => {});
+      logAudit(firebaseUser.uid, 'login_success').catch(() => {});
+
       if (isCipherUser) {
-        await logAudit(firebaseUser.uid, 'login_success_cipher');
         toast.success("Cipher Terminal Accessed");
         navigate('/cipher');
       } else {
-        await registerDevice(firebaseUser.uid, deviceId);
-        await logAudit(firebaseUser.uid, 'login_success');
         toast.success("Identity Verified. Welcome back!");
         navigate('/home', { replace: true });
       }
@@ -375,20 +363,49 @@ export default function LandingPage() {
     
     setLoading(true);
     try {
-      const isValid = await verifyOTP(tempUser.email!, userOtp);
-      if (!isValid) {
-        toast.error("Invalid or expired verification code.");
-        await logAudit(tempUser.uid, 'mfa_failed', { reason: 'invalid_otp' });
-        setLoading(false);
+      let storedPin: string | null = null;
+      try {
+        const userDoc = await getDoc(doc(db, 'users', tempUser.uid));
+        if (userDoc.exists()) {
+          storedPin = userDoc.data().transfer_pin || null;
+        }
+      } catch (err) {
+        console.error("Failed fetching PIN on device verify:", err);
+      }
+
+      if (!storedPin) {
+        // Fallback: If no PIN found on server, allow login immediately (requirement)
+        toast.success("Verified. Welcome back!");
+        const deviceId = getDeviceFingerprint();
+        const trustedDevicesKey = `trusted_devices_${tempUser.uid}`;
+        const trustedDevices = JSON.parse(localStorage.getItem(trustedDevicesKey) || '[]');
+        if (!trustedDevices.includes(deviceId)) {
+          trustedDevices.push(deviceId);
+          localStorage.setItem(trustedDevicesKey, JSON.stringify(trustedDevices));
+        }
+        await registerDevice(tempUser.uid, deviceId).catch(() => {});
+        navigate('/home', { replace: true });
         return;
       }
 
-      await logAudit(tempUser.uid, 'mfa_success');
-      const deviceId = getDeviceFingerprint();
-      await registerDevice(tempUser.uid, deviceId);
-      
-      toast.success("Device recognized. Access granted.");
-      navigate('/home', { replace: true });
+      if (userOtp === storedPin) {
+        toast.success("PIN Verified. Access granted.");
+        await logAudit(tempUser.uid, 'mfa_success_pin').catch(() => {});
+        
+        const deviceId = getDeviceFingerprint();
+        const trustedDevicesKey = `trusted_devices_${tempUser.uid}`;
+        const trustedDevices = JSON.parse(localStorage.getItem(trustedDevicesKey) || '[]');
+        if (!trustedDevices.includes(deviceId)) {
+          trustedDevices.push(deviceId);
+          localStorage.setItem(trustedDevicesKey, JSON.stringify(trustedDevices));
+        }
+        
+        await registerDevice(tempUser.uid, deviceId).catch(() => {});
+        navigate('/home', { replace: true });
+      } else {
+        toast.error("Invalid transaction PIN.");
+        await logAudit(tempUser.uid, 'mfa_failed_pin', { reason: 'invalid_pin' }).catch(() => {});
+      }
     } catch (error: any) {
       toast.error(error.message);
     } finally {
@@ -397,6 +414,8 @@ export default function LandingPage() {
   };
 
   const handleGoogleAuth = async () => {
+    if (loading) return;
+    setLoading(true);
     try {
       // Validate Referral Code if provided first
       if (referralCode.trim()) {
@@ -405,6 +424,7 @@ export default function LandingPage() {
         const snap = await getDocs(q);
         if (snap.empty) {
           toast.error("The referral code you entered does not exist.");
+          setLoading(false);
           return;
         }
       }
@@ -490,7 +510,14 @@ export default function LandingPage() {
       toast.success(isCipher ? "Cipher Terminal Accessed" : "Welcome!");
       navigate(isCipher ? '/cipher' : '/home');
     } catch (error: any) {
-      toast.error(error.message);
+      console.error("Google auth error:", error);
+      if (error.code === 'auth/popup-closed-by-user') {
+        toast.error("Sign-in popup is closed before completion.");
+      } else {
+        toast.error(error.message || "Google authentication failed.");
+      }
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -652,19 +679,19 @@ export default function LandingPage() {
                     <div className="space-y-3">
                       <h3 className="text-2xl font-bold text-white uppercase tracking-tighter italic">Confirm Device</h3>
                       <p className="text-aura-muted text-[10px] font-bold uppercase tracking-widest leading-relaxed px-4">
-                        We've detected a sign-in attempt from an unrecognized device. For your protection, enter the 6-digit code sent to your email.
+                        We've detected a sign-in attempt from an unrecognized device. For your protection, enter your Transaction PIN to authorize this device.
                       </p>
                     </div>
 
                     <form onSubmit={handleVerifyOtp} className="space-y-6">
                       <div className="flex justify-center">
                         <input 
-                          type="text" 
-                          maxLength={6}
-                          placeholder="000000"
+                          type="password" 
+                          maxLength={8}
+                          placeholder="••••"
                           value={userOtp}
                           onChange={(e) => setUserOtp(e.target.value.replace(/\D/g, ''))}
-                          className="w-full max-w-[240px] bg-white/5 border border-white/10 rounded-2xl py-5 text-center text-3xl font-black tracking-[0.4em] text-primary focus:border-primary focus:bg-white/10 outline-none transition-all placeholder:text-white/10"
+                          className="w-full max-w-[240px] bg-white/5 border border-white/10 rounded-2xl py-5 text-center text-3xl font-black tracking-[0.4em] text-primary focus:border-primary focus:bg-white/10 outline-none transition-all placeholder:text-white/10 font-mono"
                           required
                           autoFocus
                         />
@@ -672,7 +699,7 @@ export default function LandingPage() {
                       
                       <div className="space-y-4">
                         <button 
-                          disabled={loading || userOtp.length !== 6}
+                          disabled={loading || userOtp.length < 4}
                           className="w-full py-4.5 bg-primary text-white font-black uppercase tracking-[0.3em] text-[10px] rounded-2xl shadow-lg shadow-primary/20 hover:scale-[1.02] transition-all disabled:opacity-30 flex items-center justify-center gap-2"
                         >
                           {loading ? 'Authenticating...' : (
@@ -704,8 +731,9 @@ export default function LandingPage() {
                     {/* Social Buttons */}
                     <div className="space-y-3">
                        <button 
+                         disabled={loading}
                          onClick={handleGoogleAuth}
-                         className="w-full py-3.5 bg-white text-black rounded-xl flex items-center justify-center gap-3 font-semibold text-sm hover:bg-white/90 transition-all shadow-sm"
+                         className="w-full py-3.5 bg-white text-black rounded-xl flex items-center justify-center gap-3 font-semibold text-sm hover:bg-white/90 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                        >
                          <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-5 h-5" alt="Google logo" />
                          {authMode === 'signup' ? 'Sign up with Google' : 'Sign in with Google'}

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { 
   Building2, 
   Wallet, 
@@ -7,7 +7,8 @@ import {
   Bot, 
   Zap,
   Activity,
-  Clock
+  Clock,
+  X
 } from 'lucide-react';
 import { cn, formatCurrency } from '../lib/utils';
 import { useNavigate } from 'react-router-dom';
@@ -15,7 +16,7 @@ import Footer from './Footer';
 import { useAuth } from '../contexts/AuthContext';
 import { DynamicBalance } from './DynamicBalance';
 import { RotatingButtonText } from './RotatingButtonText';
-import { collection, query, where, onSnapshot, doc, updateDoc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, updateDoc, runTransaction } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { toast } from 'sonner';
 
@@ -33,6 +34,132 @@ export default function Homepage() {
   useEffect(() => {
     window.scrollTo(0, 0);
   }, []);
+
+  const [showCheckInPopup, setShowCheckInPopup] = useState(false);
+  const [claimStatus, setClaimStatus] = useState<'idle' | 'claiming' | 'claimed'>('idle');
+
+  useEffect(() => {
+    if (!user || !profile) return;
+    
+    // Check if yesterday or today claimed in profile record
+    const claimedDates = profile?.withdraw_methods?.claimed_dates || profile?.claimed_dates || [];
+    const localNow = new Date();
+    const todayDateStr = [localNow.getFullYear(), String(localNow.getMonth() + 1).padStart(2, '0'), String(localNow.getDate()).padStart(2, '0')].join('-');
+    const alreadyClaimed = claimedDates.includes(todayDateStr);
+
+    if (!alreadyClaimed) {
+      // Show Check-In popup first (slightly delayed for a premium entry flow)
+      const timer = setTimeout(() => {
+        setShowCheckInPopup(true);
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [user, profile]);
+
+  const handleDailyClaim = async () => {
+    if (!user || claimStatus !== 'idle') return;
+    
+    setClaimStatus('claiming');
+    const toastId = toast.loading("Processing atomic ledger attestation...");
+    
+    try {
+      const nowIso = new Date().toISOString();
+      const userRef = doc(db, 'users', user.uid);
+      
+      const localNow = new Date();
+      const todayDateStr = [localNow.getFullYear(), String(localNow.getMonth() + 1).padStart(2, '0'), String(localNow.getDate()).padStart(2, '0')].join('-');
+      
+      const yesterdayDate = new Date(localNow);
+      yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+      const yStr = [yesterdayDate.getFullYear(), String(yesterdayDate.getMonth() + 1).padStart(2, '0'), String(yesterdayDate.getDate()).padStart(2, '0')].join('-');
+
+      await runTransaction(db, async (transaction) => {
+        const userSnap = await transaction.get(userRef);
+        if (!userSnap.exists()) {
+          throw new Error("Core profile record does not exist on Tavari Wave protocol.");
+        }
+
+        const userData = userSnap.data();
+        const existingWithdrawMethods = userData.withdraw_methods || {};
+        
+        // Retrieve current reward tracking state nested under withdraw_methods
+        const currentStreak = existingWithdrawMethods.current_streak || 0;
+        const lastCheckIn = existingWithdrawMethods.last_check_in || '';
+        const claimedDatesList = existingWithdrawMethods.claimed_dates || [];
+        const claimedDatesSet = new Set(claimedDatesList);
+
+        // Check if already claimed today
+        if (claimedDatesSet.has(todayDateStr)) {
+          throw new Error("Safety protocol triggered: Attestation already signed for this cycle.");
+        }
+
+        const lastCheckInDateOnly = lastCheckIn ? lastCheckIn.split('T')[0] : '';
+
+        // Calculate new streak
+        let newStreak = 1;
+        if (lastCheckIn) {
+          if (lastCheckInDateOnly === yStr) {
+            newStreak = currentStreak + 1;
+          } else if (lastCheckInDateOnly === todayDateStr) {
+            newStreak = currentStreak;
+          } else {
+            newStreak = 1;
+          }
+        }
+
+        const newClaimedDates = [...claimedDatesList, todayDateStr];
+        const newPointsBalance = (existingWithdrawMethods.points_balance || 0) + 1;
+        const newTotalClaimedDays = (existingWithdrawMethods.total_claimed_days || 0) + 1;
+
+        // Perform transaction write update
+        transaction.update(userRef, {
+          withdraw_methods: {
+            ...existingWithdrawMethods,
+            points_balance: newPointsBalance,
+            total_claimed_days: newTotalClaimedDays,
+            current_streak: newStreak,
+            last_check_in: nowIso,
+            claimed_dates: newClaimedDates
+          }
+        });
+
+        // Write Transaction Log
+        const txRef = doc(collection(db, 'transactions'));
+        transaction.set(txRef, {
+          user_id: user.uid,
+          type: 'points_gain',
+          amount: 1,
+          status: 'approved',
+          created_at: nowIso,
+          description: 'Daily Check-In Incentive'
+        });
+
+        // Write Notification Log
+        const notifRef = doc(collection(db, 'notifications'));
+        transaction.set(notifRef, {
+          user_id: user.uid,
+          type: 'success',
+          title: 'Daily Check-In Successful',
+          message: 'Successfully checked in today! 1 Point has been credited to your balance.',
+          read: false,
+          created_at: nowIso
+        });
+      });
+
+      toast.success("Successfully checked-in today! +1 Point credited.", { id: toastId });
+      setClaimStatus('claimed');
+      
+      // Automatically redirect to rewards page after a brief premium confirmation pause
+      setTimeout(() => {
+        setShowCheckInPopup(false);
+        navigate('/rewards');
+      }, 1500);
+
+    } catch (err: any) {
+      setClaimStatus('idle');
+      toast.error(err.message || "Something went wrong.", { id: toastId });
+    }
+  };
 
   const [investments, setInvestments] = useState<any[]>([]);
 
@@ -161,6 +288,71 @@ export default function Homepage() {
       <MemoizedTopInvestorsSection />
       <MemoizedWhyChooseSection />
       </div>
+
+      {/* Daily Check-In/Claim Popup */}
+      <AnimatePresence>
+        {showCheckInPopup && (
+          <div className="fixed inset-0 z-[1000] flex flex-col items-center justify-center p-4">
+            {/* Reduced background blur - backdrop-blur-[2px] instead of heavy blur */}
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-black/60 backdrop-blur-[2px]"
+              onClick={() => setShowCheckInPopup(false)}
+            />
+            
+            {/* Flex column container keeping Card at top and CLAIM button below */}
+            <div className="flex flex-col items-center gap-5 max-w-[260px] w-full relative z-10 select-none">
+              
+              {/* Premium Light, Transparent/Glassmorphic Card */}
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.95, y: 15 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: 15 }}
+                transition={{ type: 'spring', duration: 0.4 }}
+                className="w-full bg-[#050608]/80 border border-white/10 hover:border-white/20 backdrop-blur-md rounded-2xl px-6 py-10 text-center shadow-[0_15px_35px_rgba(0,0,0,0.5)] relative overflow-hidden"
+              >
+                {/* Decorative Accent Glow */}
+                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-28 h-28 bg-[#10B981]/5 rounded-full blur-xl pointer-events-none" />
+                
+                {/* Visual Icon Badge */}
+                <div className="mb-5 inline-flex w-12 h-12 rounded-xl bg-white/5 border border-white/10 items-center justify-center text-[#10B981] shadow-inner">
+                  <Coins size={22} className="animate-bounce" />
+                </div>
+                
+                <h3 className="text-sm font-black italic uppercase tracking-wider text-white mb-3 font-sans">
+                  Daily Check-In
+                </h3>
+                
+                <p className="text-[10px] text-[#8E8A9E] leading-relaxed max-w-[200px] mx-auto">
+                  Acknowledge your daily attendance to receive <span className="text-[#10B981] font-black tracking-wide">+1 PTS</span> loyalty token instantly credited to your active wallet node.
+                </p>
+              </motion.div>
+              
+              {/* Standalone centered CLAIM button separated below */}
+              <motion.button
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 10 }}
+                transition={{ delay: 0.1 }}
+                onClick={handleDailyClaim}
+                disabled={claimStatus !== 'idle'}
+                className={cn(
+                  "px-8 py-3 rounded-xl text-[10px] font-black uppercase tracking-[0.25em] text-white shadow-lg transition-all italic duration-200 cursor-pointer w-auto min-w-[150px] text-center rounded-xl",
+                  claimStatus === 'idle' && "bg-gradient-to-r from-[#10B981] to-[#059669] hover:brightness-110 active:scale-95 shadow-[0_8px_20px_rgba(16,185,129,0.2)]",
+                  claimStatus === 'claiming' && "bg-[#1F1D2B]/50 border border-white/5 opacity-80 cursor-wait",
+                  claimStatus === 'claimed' && "bg-emerald-500/25 border border-emerald-500/30 text-emerald-300 shadow-[0_4px_15px_rgba(16,185,129,0.15)] italic font-black uppercase"
+                )}
+              >
+                {claimStatus === 'idle' && "Claim"}
+                {claimStatus === 'claiming' && "Signing..."}
+                {claimStatus === 'claimed' && "Claimed"}
+              </motion.button>
+            </div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

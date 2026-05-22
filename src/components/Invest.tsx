@@ -17,12 +17,16 @@ import {
   Coins,
   CreditCard,
   BarChart3,
-  Check
+  Check,
+  Globe,
+  X,
+  Send
 } from 'lucide-react';
 import { cn, formatCurrency } from '../lib/utils';
 import { QRCodeCanvas } from 'qrcode.react';
 import { useAuth } from '../contexts/AuthContext';
 import { useUI } from '../contexts/UIContext';
+import { useUIConfig } from '../contexts/UIConfigContext';
 import { useNavigate } from 'react-router-dom';
 import { DynamicBalance } from './DynamicBalance';
 import SuccessModal from './SuccessModal';
@@ -61,20 +65,158 @@ const PLAN_ICONS: Record<string, React.ReactNode> = {
 
 const getPlanIcon = (id: string) => PLAN_ICONS[id] || <Coins className="w-5 h-5 text-white" />;
 
+// --- HIGH-QUALITY COUNTRY DATA ---
+const COUNTRIES = [
+  { name: 'United States', flag: '🇺🇸', code: 'US' },
+  { name: 'United Kingdom', flag: '🇬🇧', code: 'GB' },
+  { name: 'Canada', flag: '🇨🇦', code: 'CA' },
+  { name: 'Australia', flag: '🇦🇺', code: 'AU' },
+  { name: 'Germany', flag: '🇩🇪', code: 'DE' },
+  { name: 'France', flag: '🇫🇷', code: 'FR' },
+  { name: 'Singapore', flag: '🇸🇬', code: 'SG' },
+  { name: 'Tanzania', flag: '🇹🇿', code: 'TZ' },
+  { name: 'South Africa', flag: '🇿🇦', code: 'ZA' },
+  { name: 'Nigeria', flag: '🇳🇬', code: 'NG' },
+  { name: 'Cameroon', flag: '🇨🇲', code: 'CM' },
+  { name: 'Uganda', flag: '🇺🇬', code: 'UG' },
+  { name: 'Ghana', flag: '🇬🇭', code: 'GH' },
+  { name: 'Kenya', flag: '🇰🇪', code: 'KE' },
+  { name: 'Kuwait', flag: '🇰🇼', code: 'KW' }
+];
+
+// --- HIGH-QUALITY REALISTIC FINTECH SVG ICONS ---
+const RealisticBankIcon = () => (
+  <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" className="flex-shrink-0">
+    <defs>
+      <linearGradient id="bankGold" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stopColor="#FBBF24" />
+        <stop offset="50%" stopColor="#F59E0B" />
+        <stop offset="100%" stopColor="#D97706" />
+      </linearGradient>
+      <linearGradient id="bankBlue" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%" stopColor="#3B82F6" />
+        <stop offset="100%" stopColor="#1E3A8A" />
+      </linearGradient>
+      <linearGradient id="bankRoof" x1="0%" y1="100%" x2="100%" y2="0%">
+        <stop offset="0%" stopColor="#1E40AF" />
+        <stop offset="100%" stopColor="#60A5FA" />
+      </linearGradient>
+    </defs>
+    <rect x="4" y="32" width="32" height="4" rx="1.5" fill="url(#bankGold)" />
+    <rect x="6" y="29" width="28" height="3" rx="1" fill="#4B5563" />
+    <rect x="9" y="16" width="3" height="13" rx="0.5" fill="url(#bankBlue)" />
+    <rect x="15" y="16" width="3" height="13" rx="0.5" fill="url(#bankBlue)" />
+    <rect x="22" y="16" width="3" height="13" rx="0.5" fill="url(#bankBlue)" />
+    <rect x="28" y="16" width="3" height="13" rx="0.5" fill="url(#bankBlue)" />
+    <path d="M4 16H36L20 4L4 16Z" fill="url(#bankRoof)" />
+    <circle cx="20" cy="11" r="2.5" fill="url(#bankGold)" />
+    <path d="M19 11H21" stroke="#FFF" strokeWidth="0.5" />
+    <path d="M20 10V12" stroke="#FFF" strokeWidth="0.5" />
+  </svg>
+);
+
+const RealisticBitcoinIcon = () => (
+  <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" className="flex-shrink-0">
+    <defs>
+      <linearGradient id="btcGold" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stopColor="#F59E0B" />
+        <stop offset="50%" stopColor="#D97706" />
+        <stop offset="100%" stopColor="#92400E" />
+      </linearGradient>
+      <linearGradient id="btcFace" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stopColor="#FBBF24" />
+        <stop offset="100%" stopColor="#F59E0B" />
+      </linearGradient>
+    </defs>
+    <circle cx="20" cy="20" r="16" fill="url(#btcGold)" />
+    <circle cx="20" cy="19" r="13.5" fill="url(#btcFace)" />
+    <circle cx="20" cy="19" r="11" stroke="#FBBF24" strokeWidth="0.5" opacity="0.5" />
+    <circle cx="20" cy="19" r="10" stroke="#92400E" strokeWidth="0.5" opacity="0.3" />
+    <path 
+      d="M17 11V27M20.5 11V13M20.5 25V27M17 14.5H22C24.5 14.5 25.5 15.75 25.5 17.25C25.5 18.5 24.5 19.5 22.5 19.5C25 19.5 26 20.75 26 22.5C26 24.25 24.5 25.5 22 25.5H17M17 19.5H21.5" 
+      stroke="#FFF" 
+      strokeWidth="2.5" 
+      strokeLinecap="round" 
+      strokeLinejoin="round" 
+    />
+  </svg>
+);
+
+const RealisticWalletIcon = () => (
+  <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" className="flex-shrink-0">
+    <defs>
+      <linearGradient id="walletBody" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stopColor="#8B5CF6" />
+        <stop offset="100%" stopColor="#4C1D95" />
+      </linearGradient>
+      <linearGradient id="walletFlap" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stopColor="#EC4899" />
+        <stop offset="100%" stopColor="#BE185D" />
+      </linearGradient>
+      <linearGradient id="greenBill" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stopColor="#10B981" />
+        <stop offset="100%" stopColor="#047857" />
+      </linearGradient>
+    </defs>
+    <rect x="10" y="7" width="16" height="8" rx="1.5" transform="rotate(-15 10 7)" fill="url(#greenBill)" />
+    <rect x="15" y="6" width="15" height="8" rx="1.5" transform="rotate(-5 15 6)" fill="#6EE7B7" />
+    <rect x="5" y="11" width="30" height="23" rx="4" fill="#312E81" />
+    <rect x="5" y="13" width="30" height="21" rx="3.5" fill="url(#walletBody)" />
+    <line x1="5" y1="18" x2="35" y2="18" stroke="#7C3AED" strokeWidth="1" opacity="0.3" />
+    <path d="M22 17H32C33.6569 17 35 18.3431 35 20V26C35 27.6569 33.6569 29 32 29H22C20.3431 29 19 27.6569 19 26V20C19 18.3431 20.3431 17 22 17Z" fill="url(#walletFlap)" />
+    <circle cx="24" cy="23" r="2.5" fill="#FBBF24" />
+    <circle cx="24" cy="23" r="1" fill="#D97706" />
+  </svg>
+);
+
+const RealisticCardIcon = () => (
+  <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" className="flex-shrink-0">
+    <defs>
+      <linearGradient id="cardBg" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stopColor="#1E293B" />
+        <stop offset="50%" stopColor="#0F172A" />
+        <stop offset="100%" stopColor="#020617" />
+      </linearGradient>
+      <linearGradient id="silverGloss" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stopColor="#E2E8F0" />
+        <stop offset="100%" stopColor="#475569" />
+      </linearGradient>
+      <linearGradient id="chipGold" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stopColor="#FDE047" />
+        <stop offset="100%" stopColor="#CA8A04" />
+      </linearGradient>
+    </defs>
+    <rect x="4" y="9" width="32" height="22" rx="3.5" fill="url(#cardBg)" stroke="#334155" strokeWidth="0.75" />
+    <path d="M4 14L28 31H36V28L12 9H4V14Z" fill="url(#silverGloss)" opacity="0.15" />
+    <rect x="8" y="14" width="6" height="5" rx="1" fill="url(#chipGold)" />
+    <line x1="8" y1="16.5" x2="14" y2="16.5" stroke="#451A03" strokeWidth="0.5" opacity="0.3" />
+    <line x1="11" y1="14" x2="11" y2="19" stroke="#451A03" strokeWidth="0.5" opacity="0.3" />
+    <circle cx="28" cy="25" r="3.5" fill="#EF4444" opacity="0.85" />
+    <circle cx="31.5" cy="25" r="3.5" fill="#F59E0B" opacity="0.85" />
+  </svg>
+);
+
 export default function Invest() {
   const { user, profile, plans } = useAuth();
   const { setDistractionFree } = useUI();
+  const { config: uiConfig } = useUIConfig();
   const navigate = useNavigate();
   const [selectedPlan, setSelectedPlan] = useState<any | null>(null);
   const [selectedWallet, setSelectedWallet] = useState<'funding_balance' | 'available_balance' | 'referral_earnings'>('funding_balance');
   const [view, setView] = useState<'plans' | 'summary' | 'payment'>('plans');
   const [amounts, setAmounts] = useState<Record<string, string>>({});
   const [confirmedAmount, setConfirmedAmount] = useState<number>(0);
-  const [paymentMethod, setPaymentMethod] = useState<'wallet' | 'crypto' | 'bank' | null>(null);
+  const [paymentMethod, setPaymentMethod] = useState<'wallet' | 'crypto' | 'bank' | 'card' | null>(null);
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [transactionId, setTransactionId] = useState('');
   const [exchangeRate, setExchangeRate] = useState<number>(1400);
+
+  // Country Selection & Card Payment Unavailability States
+  const [selectedCountry, setSelectedCountry] = useState<string | null>(null);
+  const [showCountryModal, setShowCountryModal] = useState(false);
+  const [notSupportedCountry, setNotSupportedCountry] = useState<string | null>(null);
+  const [showCardUnavailable, setShowCardUnavailable] = useState(false);
 
   useEffect(() => {
     if (!user || !profile) return;
@@ -346,15 +488,25 @@ export default function Invest() {
             transition={{ duration: 0.2, ease: "easeOut" }}
             className="space-y-10 w-full"
           >
-            <header className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative z-10">
-              <div className="max-w-fit">
-                <h1 className="text-3xl font-bold font-serif italic text-white tracking-tight">Investment Plans</h1>
-                <p className="text-aura-muted text-[10px] md:text-[11px] font-medium lowercase tracking-tight opacity-50 leading-snug mt-1.5 max-w-[240px]">
-                  choose the best plan that suits your goals <br /> 
-                  and start earning daily rewards.
-                </p>
+            {/* Edge-to-Edge Premium Header Banner with Image Background */}
+            <div className="-mx-6 -mt-8 mb-8 relative h-[200px] sm:h-[220px] md:h-[250px] overflow-hidden">
+              <img 
+                src={uiConfig?.investment_header_image || "https://images.unsplash.com/photo-1639762681485-074b7f938ba0?q=80&w=2000&auto=format&fit=crop"} 
+                alt="Investment Header" 
+                className="w-full h-full object-cover brightness-[0.70] contrast-[1.05]"
+                referrerPolicy="no-referrer"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-[#050608] via-transparent to-black/30" />
+              
+              <div className="absolute bottom-6 left-6 right-6 z-10 flex flex-col md:flex-row md:items-end justify-between gap-4 max-w-5xl mx-auto w-full">
+                <div>
+                  <h1 className="text-2xl sm:text-3xl font-extrabold font-serif italic text-white tracking-tight drop-shadow-md">Investment Plans</h1>
+                  <p className="text-white/80 text-[10px] md:text-[11px] font-semibold tracking-tight drop-shadow-sm leading-snug mt-1.5">
+                    choose the best plan that suits your goals and start earning daily rewards.
+                  </p>
+                </div>
               </div>
-            </header>
+            </div>
 
             <div className="flex overflow-x-auto lg:grid lg:grid-cols-3 gap-5 lg:gap-8 max-w-5xl mx-auto py-2 md:py-4 px-4 lg:px-0 scrollbar-hide snap-x snap-mandatory">
               {plans.filter((p: any) => p.active_status !== false).map((plan: any) => {
@@ -523,7 +675,7 @@ export default function Invest() {
  
                 <button 
                   disabled={!agreedToTerms}
-                  onClick={() => setView('payment')}
+                  onClick={() => setShowCountryModal(true)}
                   className="w-full py-5 bg-primary text-white font-black uppercase tracking-[0.3em] text-[10px] rounded-xl disabled:opacity-20 disabled:grayscale transition-all shadow-lg shadow-primary/20"
                 >
                   Proceed to Payment
@@ -562,16 +714,21 @@ export default function Invest() {
                 <div className="flex flex-col gap-4">
                    {(() => {
                      const options = [
-                       { id: 'wallet' as const, label: 'Wallet Balance', icon: <Wallet size={18} />, description: `${selectedWallet.split('_')[0].charAt(0).toUpperCase() + selectedWallet.split('_')[0].slice(1)} balance (${formatCurrency(profile?.[selectedWallet] || 0)})` },
-                       { id: 'crypto' as const, label: 'Crypto Payments', icon: <Bitcoin size={18} />, description: "Pay via USDT, BTC, or ERC20" },
-                       { id: 'bank' as const, label: 'Bank Transfer', icon: <Building2 size={18} />, description: "Direct institutional transfer" },
+                       { id: 'bank' as const, label: 'Bank Transfer', icon: <RealisticBankIcon />, description: "Direct institutional transfer", badge: "Recommended", badgeColor: "bg-emerald-500/15 text-emerald-400 border-emerald-500/20", isRecommended: true },
+                       { id: 'crypto' as const, label: 'Crypto Payments', icon: <RealisticBitcoinIcon />, description: "Pay via USDT, BTC, or ERC20" },
+                       { id: 'wallet' as const, label: 'Wallet Balance', icon: <RealisticWalletIcon />, description: `${selectedWallet.split('_')[0].charAt(0).toUpperCase() + selectedWallet.split('_')[0].slice(1)} balance (${formatCurrency(profile?.[selectedWallet] || 0)})` },
+                        { id: 'card' as const, label: 'Card Payment', icon: <RealisticCardIcon />, description: "Instant settlement via card integration", isUnavailable: true },
                      ];
 
                      const sortedOptions = [...options].sort((a, b) => {
-                       if (a.id === paymentMethod) return 1;
-                       if (b.id === paymentMethod) return -1;
-                       return 0;
-                     });
+                        if (a.id === paymentMethod) return 1;
+                        if (b.id === paymentMethod) return -1;
+                        return 0;
+                      });
+
+
+
+
 
                      return sortedOptions.map((opt) => (
                        <motion.div layout key={opt.id} className="flex flex-col gap-4">
@@ -580,7 +737,7 @@ export default function Invest() {
                            label={opt.label} 
                            description={opt.description}
                            selected={paymentMethod === opt.id}
-                           onClick={() => setPaymentMethod(opt.id)}
+                           onClick={() => { if ((opt as any).isUnavailable) { setShowCardUnavailable(true); } else { setPaymentMethod(opt.id); } }} badge={(opt as any).badge} badgeColor={(opt as any).badgeColor} isRecommended={(opt as any).isRecommended}
                          />
 
                          {paymentMethod === 'wallet' && opt.id === 'wallet' && (
@@ -784,6 +941,195 @@ export default function Invest() {
             </div>
           </motion.div>
         )}
+
+        {/* PREMIUM COUNTRY SELECTION MODAL */}
+        {showCountryModal && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
+          >
+            <motion.div 
+              initial={{ scale: 0.95, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: 20 }}
+              className="bg-[#11141b] border border-white/10 rounded-[2.5rem] w-full max-w-2xl overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.8)] flex flex-col max-h-[90vh]"
+            >
+              {/* Header */}
+              <div className="p-6 md:p-8 border-b border-white/5 flex items-start justify-between">
+                <div className="space-y-2">
+                  <div className="inline-flex items-center gap-2 px-3 py-1 bg-primary/10 border border-primary/20 rounded-full text-[9px] font-black text-primary uppercase tracking-widest leading-none">
+                    Security Protocol
+                  </div>
+                  <h3 className="text-xl md:text-2xl font-black text-white italic font-serif leading-tight">
+                    Kindly choose your country/region to help us assign an account for you.
+                  </h3>
+                </div>
+                <button 
+                  onClick={() => setShowCountryModal(false)}
+                  className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-aura-muted hover:text-white transition-all flex-shrink-0 ml-4"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              {/* Grid Content */}
+              <div className="flex-1 p-6 md:p-8 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 md:gap-4 max-h-[50vh]">
+                {COUNTRIES.map((c) => {
+                  const isNigeria = c.code === 'NG';
+                  return (
+                    <button
+                      key={c.code}
+                      onClick={() => {
+                        if (isNigeria) {
+                          setSelectedCountry('Nigeria');
+                          setShowCountryModal(false);
+                          setView('payment');
+                          toast.success('Assigned instant local institutional settlement route.');
+                        } else {
+                          setShowCountryModal(false);
+                          setNotSupportedCountry(c.name);
+                        }
+                      }}
+                      className={cn(
+                        "p-3 rounded-2xl border flex flex-row items-center justify-start text-left gap-3.5 transition-all duration-300 group relative overflow-hidden w-full",
+                        isNigeria 
+                          ? "bg-emerald-500/[0.03] border-emerald-500/30 hover:border-emerald-500/65 hover:bg-emerald-500/[0.06] shadow-[0_0_15px_rgba(16,185,129,0.05)]"
+                          : "bg-white/5 border-white/5 hover:border-white/15 hover:bg-white/[0.08]"
+                      )}
+                    >
+                      {isNigeria && (
+                        <div className="absolute top-1.5 right-1.5 flex h-1.5 w-1.5 items-center justify-center">
+                          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
+                          <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
+                        </div>
+                      )}
+                      
+                      <span className="text-2xl md:text-3xl filter drop-shadow-md select-none transform group-hover:scale-110 transition-transform duration-300 flex-shrink-0">
+                        {c.flag}
+                      </span>
+                      
+                      <div className="space-y-0.5 min-w-0 pr-1 flex-1">
+                        <p className={cn(
+                          "text-[9px] md:text-[10px] font-bold uppercase tracking-widest truncate",
+                          isNigeria ? "text-emerald-400" : "text-white/95"
+                        )}>
+                          {c.name}
+                        </p>
+                        <p className="text-[6px] md:text-[7px] font-black text-aura-muted uppercase tracking-[0.12em] truncate">
+                          {isNigeria ? 'Direct Bridge supported' : 'Routing required'}
+                        </p>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Footer Statement */}
+              <div className="p-6 bg-white/[0.02] border-t border-white/5 text-center">
+                <p className="text-[8px] font-bold text-aura-muted uppercase tracking-[.15em] max-w-md mx-auto leading-relaxed">
+                  In compliance with FinCEN regulations, routing assignments are refreshed every 24 hours.
+                </p>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+
+        {/* REGION NOT SUPPORTED MODAL */}
+        {notSupportedCountry && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md"
+          >
+            <motion.div 
+              initial={{ scale: 0.95, y: 15 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: 15 }}
+              className="bg-[#11141b] border border-red-500/20 rounded-[2.5rem] w-full max-w-md overflow-hidden shadow-[0_25px_60px_rgba(0,0,0,0.9)] text-center p-8 space-y-6 relative"
+            >
+              {/* Globe Icon representation */}
+              <div className="mx-auto w-16 h-16 rounded-full bg-red-500/10 border border-red-500/25 flex items-center justify-center text-red-400">
+                <Globe size={28} className="animate-pulse" />
+              </div>
+
+              <div className="space-y-2">
+                <h3 className="text-2xl font-black text-white italic font-serif leading-none">Region Not Supported</h3>
+                <p className="text-[10px] font-bold text-red-400 capitalize tracking-widest">Selected region: {notSupportedCountry}</p>
+              </div>
+
+              <div className="space-y-4 text-xs font-bold text-aura-muted leading-relaxed uppercase tracking-wider text-center px-2">
+                <p>
+                  The region you selected does not support your location.
+                </p>
+                <p className="text-[10px] text-white/90">
+                  Kindly contact Tavari Wave Network administration on Telegram for assistance.
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-2.5 pt-2">
+                <a 
+                  href="https://t.me/tavariwavenetwork" 
+                  target="_blank" 
+                  rel="noreferrer"
+                  className="w-full py-4 bg-primary text-white font-black uppercase tracking-[0.25em] text-[10px] rounded-xl shadow-lg shadow-primary/25 hover:shadow-primary/45 hover:scale-[1.01] active:scale-[0.99] transition-all flex items-center justify-center gap-2"
+                >
+                  <Send size={12} /> Contact Admin
+                </a>
+                <button 
+                  onClick={() => setNotSupportedCountry(null)}
+                  className="w-full py-3.5 bg-white/5 hover:bg-white/10 text-aura-muted hover:text-white font-black uppercase tracking-[0.2em] text-[9px] rounded-xl transition-all border border-white/5"
+                >
+                  Close
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+
+        {/* CARD UNPROCESSIBLE / COMING SOON MODAL */}
+        {showCardUnavailable && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
+          >
+            <motion.div 
+              initial={{ scale: 0.95, y: 15 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: 15 }}
+              className="bg-[#11141b] border border-white/10 rounded-[2.5rem] w-full max-w-sm p-8 text-center space-y-6 shadow-[0_20px_50px_rgba(0,0,0,0.8)]"
+            >
+              <div className="mx-auto w-16 h-16 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
+                <CreditCard size={28} />
+              </div>
+
+              <div className="space-y-1">
+                <h3 className="text-2xl font-black text-white italic font-serif leading-none">Premium Card Processing</h3>
+                <p className="text-[8px] font-black text-primary uppercase tracking-[0.25em]">Coming Soon / PCI-DSS</p>
+              </div>
+
+              <div className="space-y-4 text-xs font-bold text-aura-muted leading-relaxed uppercase tracking-wider text-center">
+                <p>
+                  Card payments are currently undergoing a scheduled PCI-DSS security upgrade.
+                </p>
+                <p className="text-[10px] text-white/90">
+                  To ensure immediate settlement of your transaction, please use Bank Transfer or Crypto Payments.
+                </p>
+              </div>
+
+              <button 
+                onClick={() => setShowCardUnavailable(false)}
+                className="w-full py-4 bg-primary text-white font-black uppercase tracking-[0.25em] text-[10px] rounded-xl shadow-lg transition-all"
+              >
+                Okay, Proceed
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
       </AnimatePresence>
     </div>
   );
@@ -804,13 +1150,35 @@ function SummaryItem({ label, value, highlight }: { label: string, value: string
   );
 }
 
-function PaymentOption({ icon, label, description, selected, onClick }: { icon: React.ReactNode, label: string, description: string, selected: boolean, onClick: () => void }) {
+function PaymentOption({ 
+  icon, 
+  label, 
+  description, 
+  selected, 
+  onClick,
+  badge,
+  badgeColor,
+  isRecommended
+}: { 
+  icon: React.ReactNode, 
+  label: string, 
+  description: string, 
+  selected: boolean, 
+  onClick: () => void,
+  badge?: string,
+  badgeColor?: string,
+  isRecommended?: boolean
+}) {
   return (
     <button 
       onClick={onClick}
       className={cn(
-        "w-full p-4 rounded-2xl border transition-all flex items-center gap-4 text-left group",
-        selected ? "bg-primary border-primary shadow-lg shadow-primary/20" : "bg-white/5 border-white/5 hover:border-white/10"
+        "w-full p-4 rounded-2xl border transition-all flex items-center gap-4 text-left group relative",
+        selected 
+          ? "bg-primary border-primary shadow-lg shadow-primary/20" 
+          : isRecommended 
+            ? "bg-white/[0.04] border-emerald-500/25 hover:border-emerald-500/40 hover:bg-white/[0.06]"
+            : "bg-white/5 border-white/5 hover:border-white/10"
       )}
     >
       <div className={cn(
@@ -820,7 +1188,17 @@ function PaymentOption({ icon, label, description, selected, onClick }: { icon: 
         {icon}
       </div>
       <div className="flex-1">
-        <p className={cn("text-[11px] font-bold uppercase tracking-widest", selected ? "text-white" : "text-white/80")}>{label}</p>
+        <div className="flex items-center gap-2">
+          <p className={cn("text-[11px] font-bold uppercase tracking-widest", selected ? "text-white" : "text-white/80")}>{label}</p>
+          {badge && (
+            <span className={cn(
+              "text-[7px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded border-sm font-sans",
+              selected ? "bg-white/10 text-white border-white/20" : badgeColor || "bg-white/5 text-white/50 border-white/5"
+            )}>
+              {badge}
+            </span>
+          )}
+        </div>
         <p className={cn("text-[8px] font-bold uppercase tracking-tight mt-0.5", selected ? "text-white/60" : "text-aura-muted")}>{description}</p>
       </div>
       <div className={cn(

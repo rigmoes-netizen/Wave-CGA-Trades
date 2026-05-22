@@ -20,7 +20,7 @@ import {
   runTransaction
 } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
-import { getRoiByAmount } from '../lib/utils';
+import { getRoiByAmount, isWeekendROI } from '../lib/utils';
 
 export const DEFAULT_PLANS = [
   {
@@ -77,8 +77,19 @@ export const DEFAULT_PLANS = [
 ];
 
 export function getRoiByAmountDynamic(amount: number, livePlans: any[]): number {
+  const isWeekend = isWeekendROI();
   const matchingPlan = (livePlans || []).find((p: any) => p.active_status !== false && amount >= p.min && amount <= p.max);
-  if (matchingPlan) return matchingPlan.roi;
+  if (matchingPlan) {
+    const planId = (matchingPlan.id || matchingPlan.name || '').toLowerCase();
+    if (planId.includes('regular')) {
+      return isWeekend ? 0.015 : 0.025;
+    } else if (planId.includes('premium')) {
+      return isWeekend ? 0.017 : 0.027;
+    } else if (planId.includes('elite')) {
+      return isWeekend ? 0.019 : 0.029;
+    }
+    return matchingPlan.roi;
+  }
   return getRoiByAmount(amount); // fallback
 }
 
@@ -466,8 +477,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await auth.signOut();
   }, []);
 
+  const dynamicPlans = plans.map(p => {
+    const isWeekend = isWeekendROI();
+    let dynamicRoi = p.roi;
+    const planId = (p.id || p.name || '').toLowerCase();
+    if (planId.includes('regular')) {
+      dynamicRoi = isWeekend ? 0.015 : 0.025;
+    } else if (planId.includes('premium')) {
+      dynamicRoi = isWeekend ? 0.017 : 0.027;
+    } else if (planId.includes('elite')) {
+      dynamicRoi = isWeekend ? 0.019 : 0.029;
+    }
+    return { ...p, roi: dynamicRoi };
+  });
+
   return (
-    <AuthContext.Provider value={{ user, profile, loading, logout, refreshAuth, plans }}>
+    <AuthContext.Provider value={{ user, profile, loading, logout, refreshAuth, plans: dynamicPlans }}>
       {!loading && children}
     </AuthContext.Provider>
   );

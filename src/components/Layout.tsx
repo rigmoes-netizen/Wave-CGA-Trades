@@ -30,6 +30,7 @@ import {
   ArrowLeft,
   ArrowRightLeft,
   Gift,
+  Coins,
   Headset
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -173,6 +174,36 @@ export default function Layout() {
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
+
+  const [showTelegramPopup, setShowTelegramPopup] = useState(false);
+
+  useEffect(() => {
+    if (!user) return;
+    const userId = user.uid;
+    const nowLocalDate = [new Date().getFullYear(), String(new Date().getMonth() + 1).padStart(2, '0'), String(new Date().getDate()).padStart(2, '0')].join('-');
+    const closedKey = `telegramPopupClosedDate_${userId}`;
+    const closedDate = localStorage.getItem(closedKey);
+    
+    // Popup should trigger randomly between 15s–45s
+    if (closedDate !== nowLocalDate) {
+      const randomTimeMs = Math.floor(Math.random() * (45000 - 15000 + 1)) + 15000;
+      const timer = setTimeout(() => {
+        if (localStorage.getItem(closedKey) !== nowLocalDate) {
+          setShowTelegramPopup(true);
+        }
+      }, randomTimeMs);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [user]);
+
+  const handleCloseTelegram = () => {
+    if (user) {
+      const nowLocalDate = [new Date().getFullYear(), String(new Date().getMonth() + 1).padStart(2, '0'), String(new Date().getDate()).padStart(2, '0')].join('-');
+      localStorage.setItem(`telegramPopupClosedDate_${user.uid}`, nowLocalDate);
+    }
+    setShowTelegramPopup(false);
+  };
 
   const profileRef = useRef<HTMLDivElement>(null);
   const languageRef = useRef<HTMLDivElement>(null);
@@ -425,6 +456,7 @@ export default function Layout() {
                       { label: 'Top Investors', path: '/top-investors', icon: <Trophy size={14} /> },
                       { label: 'Reviews', path: '/reviews', icon: <MessageSquarePlus size={14} /> },
                       { label: 'Reward', path: '/rewards', icon: <Gift size={14} /> },
+                      { label: 'TWN Token Portal', path: '/token', icon: <Coins size={14} /> },
                     ].map((subItem) => (
                       <button
                         key={subItem.path}
@@ -671,7 +703,7 @@ export default function Layout() {
 
       {/* --- MOBILE BOTTOM NAV --- */}
       <nav className={cn(
-        "lg:hidden fixed bottom-6 left-6 right-6 h-16 z-[100] flex items-center px-4 backdrop-blur-3xl rounded-[28px] border shadow-[0_20px_50px_rgba(0,0,0,0.4)]",
+        "lg:hidden fixed bottom-0 left-0 right-0 h-16 z-[100] flex items-center px-4 backdrop-blur-3xl border-t shadow-[0_-10px_30px_rgba(0,0,0,0.5)]",
         isDark 
           ? "bg-white/[0.03] border-primary/20 shadow-[inset_0_0_20px_rgba(255,255,255,0.01)]" 
           : "bg-white/90 border-primary/20",
@@ -681,6 +713,17 @@ export default function Layout() {
           <BottomNavItem icon={<Home />} label={t('home')} active={activeTab === 'home'} onClick={() => handleNavigation('/home')} />
           <BottomNavItem icon={<PlusCircle />} label={t('fund')} active={activeTab === 'fund'} onClick={() => handleNavigation('/fund')} />
           <BottomNavItem icon={<TrendingUp />} label={t('invest')} active={activeTab === 'invest'} onClick={() => handleNavigation('/invest')} />
+          <BottomNavItem 
+            icon={
+              <div className="relative flex items-center justify-center">
+                <Coins className={cn("text-yellow-400 drop-shadow-[0_0_8px_rgba(245,158,11,0.6)]", activeTab === 'token' ? "animate-pulse" : "")} />
+                <div className="absolute -inset-1 bg-gradient-to-r from-purple-500/30 to-yellow-500/30 rounded-full blur-xs opacity-50" />
+              </div>
+            } 
+            label="Token" 
+            active={activeTab === 'token'} 
+            onClick={() => handleNavigation('/token')} 
+          />
           <BottomNavItem icon={<Gift />} label="Rewards" active={activeTab === 'rewards'} onClick={() => handleNavigation('/rewards')} />
           <BottomNavItem 
             icon={
@@ -703,8 +746,8 @@ export default function Layout() {
             initial={false}
             transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
             style={{ 
-              width: `${100 / 5}%`,
-              left: `${(['home', 'fund', 'invest', 'rewards', 'profile'].indexOf(activeTab === 'dashboard' ? 'home' : activeTab) * (100 / 5))}%`
+              width: `${100 / 6}%`,
+              left: `${((['home', 'fund', 'invest', 'token', 'rewards', 'profile'].indexOf(activeTab === 'dashboard' ? 'home' : activeTab) >= 0 ? ['home', 'fund', 'invest', 'token', 'rewards', 'profile'].indexOf(activeTab === 'dashboard' ? 'home' : activeTab) : 0) * (100 / 6))}%`
             }}
           />
         </div>
@@ -850,6 +893,54 @@ export default function Layout() {
               </div>
             </motion.div>
           </>
+        )}
+      </AnimatePresence>
+
+      {/* --- TELEGRAM COMMUNITY POPUP --- */}
+      <AnimatePresence>
+        {showTelegramPopup && (
+          <div className="fixed inset-0 z-[1200] flex items-center justify-center px-4">
+            {/* Dim overlay with light blur only (no heavy blur) */}
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-black/60 backdrop-blur-[1px]"
+              onClick={handleCloseTelegram}
+            />
+            
+            {/* Light slide up & fade-in container */}
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.96, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 15 }}
+              transition={{ ease: "easeOut", duration: 0.35 }}
+              className="relative w-full max-w-[380px] sm:max-w-[420px] mx-auto select-none overflow-visible z-10"
+            >
+              {/* Floating Close Button */}
+              <button 
+                onClick={handleCloseTelegram}
+                className="absolute -top-12 right-2 bg-black/50 hover:bg-black/80 text-white/80 hover:text-white border border-white/10 p-2 rounded-full transition-all z-[1300] backdrop-blur-[2px] flex items-center justify-center cursor-pointer shadow-md"
+              >
+                <X size={16} />
+              </button>
+              
+              <a 
+                href="https://t.me/tavariwavenetwork" 
+                target="_blank" 
+                rel="noopener noreferrer" 
+                onClick={handleCloseTelegram}
+                className="block outline-none"
+              >
+                <img 
+                  src="https://i.imgur.com/Sgwxias.png" 
+                  alt="Join Telegram Community"
+                  className="w-full h-auto object-contain rounded-3xl cursor-pointer shadow-lg hover:shadow-purple-500/10 transition-shadow"
+                  referrerPolicy="no-referrer"
+                />
+              </a>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
     </div>

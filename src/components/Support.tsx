@@ -178,37 +178,57 @@ export default function Support() {
 
             <div className="grid grid-cols-1 gap-3">
               <ContactCard 
+                icon={
+                  <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
+                    <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397.01 12.008.01c3.202.001 6.212 1.246 8.477 3.514 2.266 2.268 3.507 5.28 3.505 8.484-.004 6.657-5.34 11.997-11.953 11.997-2.005-.001-3.973-.502-5.717-1.458L0 24zm6.012-3.857c1.616.96 3.2 1.48 4.767 1.487 5.429.006 9.851-4.412 9.854-9.845.002-2.63-1.018-5.101-2.872-6.958a9.813 9.813 0 00-6.964-2.84c-5.434 0-9.855 4.414-9.858 9.848-.002 1.704.437 3.371 1.272 4.881l-1.014 3.702 3.815-.975zM17.48 14.65c-.3-.15-1.782-.88-2.05-.98-.268-.1-.463-.15-.657.15-.194.3-.75.98-.918 1.18-.168.19-.337.21-.637.06-1.551-.78-2.73-1.39-3.793-3.217-.282-.48.282-.44.808-1.493.085-.17.043-.32-.02-.47-.064-.15-.657-1.58-.9-2.17-.236-.57-.475-.49-.656-.5l-.56-.01c-.194 0-.51.07-.777.37-.266.3-1.02 1.001-1.02 2.44 0 1.44 1.047 2.83 1.193 3.03.145.2 2.06 3.15 4.99 4.42.697.3 1.24.48 1.666.62.7.22 1.34.19 1.84.11.56-.08 1.7-.69 1.94-1.35.24-.66.24-1.22.17-1.35-.07-.13-.27-.21-.57-.36z" />
+                  </svg>
+                }
+                label="WhatsApp Support" 
+                value="+1 (369) 218-0529" 
+                href="https://wa.me/13692180529?text=Hello%20WAVE%20Support,%20I%20need%20assistance."
+                brandColor="text-emerald-500"
+                bgColor="bg-emerald-500/10"
+              />
+              <ContactCard 
+                icon={
+                  <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-1-.65-.35-1 .22-1.59.15-.15 2.71-2.48 2.76-2.69.01-.03.01-.14-.07-.2-.08-.06-.19-.04-.27-.02-.12.02-1.96 1.25-5.54 3.69-.52.36-1 .53-1.42.52-.47-.01-1.37-.26-2.03-.48-.82-.27-1.47-.42-1.42-.88.03-.24.35-.49.97-.74 3.79-1.65 6.32-2.74 7.59-3.27 3.61-1.5 4.36-1.76 4.85-1.77.11 0 .35.03.5.15.13.1.16.24.18.33-.02.08-.01.21-.02.31z"/>
+                  </svg>
+                } 
+                label="Telegram Channel" 
+                value="@tavariwavenetwork" 
+                href="https://t.me/tavariwavenetwork"
+                brandColor="text-sky-450"
+                bgColor="bg-sky-500/15"
+              />
+              <ContactCard 
+                icon={
+                  <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm3.17 14.16c-.02.04-.1.14-.14.14-.14 0-.46-.08-1-.31-.9-.37-1.96-1.08-2.67-1.78l-.34-.34c-.81-.82-.67-.78-.11-1.34.1-.11.23-.25.35-.4.18-.21.15-.31.02-.45-.1-.1-.7-1.63-.94-2.18-.11-.27-.26-.14-.38-.13l-.53.01c-.19 0-.48.06-.72.33-.24.27-1.03.95-1.03 2.33s.96 2.71 1.09 2.91c.13.19 1.95 2.98 4.73 4.18.66.28 1.18.45 1.58.58.66.21 1.25.18 1.73.11.53-.08 1.62-.66 1.85-1.28.23-.62.23-1.15.16-1.28-.06-.11-.24-.19-.52-.33-.28-.13-1.63-.8-1.88-.89-.25-.09-.43-.14-.62.14-.19.28-.73.91-.89 1.1z"/>
+                  </svg>
+                } 
+                label="Telegram Group Chat" 
+                value="Join Community Group" 
+                href="https://t.me/+6E7YBryMyr1kOGQ0"
+                brandColor="text-teal-400"
+                bgColor="bg-teal-500/10"
+              />
+              <ContactCard 
                 icon={<Mail size={16} />} 
-                label="Official Email" 
-                value="support@tavariwave.network" 
-                href="mailto:support@tavariwave.network"
+                label="Verified Email Support" 
+                value="tavariwavenetwork@support.com" 
+                href="mailto:tavariwavenetwork@support.com"
+                brandColor="text-indigo-400"
+                bgColor="bg-indigo-500/10"
               />
               <ContactCard 
-                icon={<MessageSquare size={16} />} 
-                label="Telegram" 
-                value="@nexus_priority" 
-                href="https://t.me/nexus"
+                icon={<Mail size={16} />} 
+                label="Backup Gmail Inquiries" 
+                value="tavariwavenetwork@gmail.com" 
+                href="mailto:tavariwavenetwork@gmail.com"
+                brandColor="text-pink-400"
+                bgColor="bg-pink-500/10"
               />
-              <ContactCard 
-                icon={<Phone size={16} />} 
-                label="WhatsApp" 
-                value="+1 (555) NEXUS-01" 
-                href="https://wa.me/15551234567"
-              />
-              <div className="grid grid-cols-2 gap-3">
-                <ContactCard 
-                  icon={<Phone size={14} />} 
-                  label="Hotline 1" 
-                  value="+1 902 444 8833" 
-                  href="tel:+19024448833"
-                />
-                <ContactCard 
-                  icon={<Phone size={14} />} 
-                  label="Hotline 2" 
-                  value="+44 20 7946 0958" 
-                  href="tel:+442079460958"
-                />
-              </div>
             </div>
           </section>
 
@@ -409,16 +429,16 @@ export default function Support() {
   );
 }
 
-function ContactCard({ icon, label, value, href }: { icon: React.ReactNode, label: string, value: string, href: string }) {
+function ContactCard({ icon, label, value, href, brandColor = "text-blue-500", bgColor = "bg-blue-500/10" }: { icon: React.ReactNode, label: string, value: string, href: string, brandColor?: string, bgColor?: string }) {
   return (
     <a 
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="bg-white/50 dark:bg-white/5 border border-slate-200 dark:border-white/10 p-5 rounded-2xl flex items-center justify-between group hover:border-blue-500/50 transition-all backdrop-blur-sm"
+      className="bg-white/50 dark:bg-white/5 border border-slate-200 dark:border-white/10 p-5 rounded-2xl flex items-center justify-between group hover:border-emerald-500/30 transition-all backdrop-blur-sm"
     >
       <div className="flex items-center gap-4">
-        <div className="w-10 h-10 bg-blue-500/10 rounded-xl flex items-center justify-center text-blue-500 group-hover:scale-110 transition-transform">
+        <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform", bgColor, brandColor)}>
           {icon}
         </div>
         <div>
@@ -426,7 +446,7 @@ function ContactCard({ icon, label, value, href }: { icon: React.ReactNode, labe
           <p className="text-xs font-black text-slate-800 dark:text-slate-200 tracking-tight">{value}</p>
         </div>
       </div>
-      <ExternalLink size={14} className="text-slate-300 dark:text-slate-700 group-hover:text-blue-500 transition-colors" />
+      <ExternalLink size={14} className="text-slate-300 dark:text-slate-700 group-hover:text-emerald-500 transition-colors" />
     </a>
   );
 }

@@ -163,8 +163,8 @@ const faqs: FAQItem[] = [
         </ul>
         <p>
           For priority technical assistance, contact:{' '}
-          <a href="mailto:support@wavetraders.com" className="text-primary font-black italic underline hover:text-primary/80 transition-colors">
-            support@wavetraders.com
+          <a href="mailto:tavariwavenetwork@support.com" className="text-primary font-black italic underline hover:text-primary/80 transition-colors">
+            tavariwavenetwork@support.com
           </a>
         </p>
       </div>
@@ -349,7 +349,7 @@ const FAQ = () => {
 
           <div className="flex flex-wrap justify-center gap-6 relative z-10">
             <a 
-              href="mailto:support@wavetraders.com"
+              href="mailto:tavariwavenetwork@support.com"
               className="flex items-center gap-3 px-8 py-4 bg-white text-black font-black uppercase tracking-widest text-[10px] rounded-2xl hover:scale-105 transition-all shadow-xl"
             >
               <Mail size={16} />
